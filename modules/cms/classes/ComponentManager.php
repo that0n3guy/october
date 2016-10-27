@@ -1,9 +1,9 @@
 <?php namespace Cms\Classes;
 
 use Str;
-use Illuminate\Container\Container;
 use System\Classes\PluginManager;
-use System\Classes\SystemException;
+use SystemException;
+use Illuminate\Support\Facades\App;
 
 /**
  * Component manager
@@ -61,8 +61,9 @@ class ComponentManager
 
         foreach ($plugins as $plugin) {
             $components = $plugin->registerComponents();
-            if (!is_array($components))
+            if (!is_array($components)) {
                 continue;
+            }
 
             foreach ($components as $className => $code) {
                 $this->registerComponent($className, $code, $plugin);
@@ -79,6 +80,7 @@ class ComponentManager
      *   });
      * </pre>
      *
+     * @param callable $definitions
      * @return array Array values are class names.
      */
     public function registerComponents(callable $definitions)
@@ -91,23 +93,31 @@ class ComponentManager
      */
     public function registerComponent($className, $code = null, $plugin = null)
     {
-        if (!$this->classMap)
+        if (!$this->classMap) {
             $this->classMap = [];
+        }
 
-        if (!$this->codeMap)
+        if (!$this->codeMap) {
             $this->codeMap = [];
+        }
 
-        if (!$code)
+        if (!$code) {
             $code = Str::getClassId($className);
+        }
 
-        if ($code == 'viewBag' && $className != 'Cms\Classes\ViewBag')
-            throw new SystemException(sprintf('The component code viewBag is reserved. Please use another code for the component class %s.', $className));
+        if ($code == 'viewBag' && $className != 'Cms\Classes\ViewBag') {
+            throw new SystemException(sprintf(
+                'The component code viewBag is reserved. Please use another code for the component class %s.',
+                $className
+            ));
+        }
 
         $className = Str::normalizeClassName($className);
         $this->codeMap[$code] = $className;
         $this->classMap[$className] = $code;
-        if ($plugin !== null)
+        if ($plugin !== null) {
             $this->pluginMap[$className] = $plugin;
+        }
     }
 
     /**
@@ -116,20 +126,22 @@ class ComponentManager
      */
     public function listComponents()
     {
-        if ($this->codeMap === null)
+        if ($this->codeMap === null) {
             $this->loadComponents();
+        }
 
         return $this->codeMap;
     }
 
-    /** 
+    /**
      * Returns an array of all component detail definitions.
      * @return array Array keys are component codes, values are the details defined in the component.
      */
     public function listComponentDetails()
     {
-        if ($this->detailsCache !== null)
+        if ($this->detailsCache !== null) {
             return $this->detailsCache;
+        }
 
         $details = [];
         foreach ($this->listComponents() as $componentAlias => $componentClass) {
@@ -148,12 +160,14 @@ class ComponentManager
     {
         $codes = $this->listComponents();
 
-        if (isset($codes[$name]))
+        if (isset($codes[$name])) {
             return $codes[$name];
+        }
 
         $name = Str::normalizeClassName($name);
-        if (isset($this->classMap[$name]))
+        if (isset($this->classMap[$name])) {
             return $name;
+        }
 
         return null;
     }
@@ -166,15 +180,16 @@ class ComponentManager
     public function hasComponent($name)
     {
         $className = $this->resolve($name);
-        if (!$className)
+        if (!$className) {
             return false;
+        }
 
         return isset($this->classMap[$className]);
     }
 
     /**
      * Makes a component object with properties set.
-     * @param $name A component class name or code.
+     * @param string $name A component class name or code.
      * @param CmsObject $cmsObject The Cms object that spawned this component.
      * @param array $properties The properties set by the Page or Layout.
      * @return ComponentBase The component object.
@@ -182,13 +197,21 @@ class ComponentManager
     public function makeComponent($name, $cmsObject = null, $properties = [])
     {
         $className = $this->resolve($name);
-        if (!$className)
-            throw new SystemException(sprintf('Class name is not registered for the component %s. Check the component plugin.', $name));
+        if (!$className) {
+            throw new SystemException(sprintf(
+                'Class name is not registered for the component "%s". Check the component plugin.',
+                $name
+            ));
+        }
 
-        if (!class_exists($className))
-            throw new SystemException(sprintf('Component class not found %s.Check the component plugin.', $className));
+        if (!class_exists($className)) {
+            throw new SystemException(sprintf(
+                'Component class not found "%s". Check the component plugin.',
+                $className
+            ));
+        }
 
-        $component = new $className($cmsObject, $properties);
+        $component = App::make($className, [$cmsObject, $properties]);
         $component->name = $name;
 
         return $component;
@@ -202,8 +225,9 @@ class ComponentManager
     public function findComponentPlugin($component)
     {
         $className = Str::normalizeClassName(get_class($component));
-        if (isset($this->pluginMap[$className]))
+        if (isset($this->pluginMap[$className])) {
             return $this->pluginMap[$className];
+        }
 
         return null;
     }

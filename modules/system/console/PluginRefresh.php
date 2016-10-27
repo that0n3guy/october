@@ -38,19 +38,24 @@ class PluginRefresh extends Command
     {
         $pluginName = $this->argument('name');
         $pluginName = PluginManager::instance()->normalizeIdentifier($pluginName);
+        if (!PluginManager::instance()->exists($pluginName)) {
+            throw new \InvalidArgumentException(sprintf('Plugin "%s" not found.', $pluginName));
+        }
 
         $manager = UpdateManager::instance()->resetNotes();
 
         $manager->rollbackPlugin($pluginName);
-        foreach ($manager->getNotes() as $note)
+        foreach ($manager->getNotes() as $note) {
             $this->output->writeln($note);
+        }
 
         $manager->resetNotes();
         $this->output->writeln('<info>Reinstalling plugin...</info>');
         $manager->updatePlugin($pluginName);
 
-        foreach ($manager->getNotes() as $note)
+        foreach ($manager->getNotes() as $note) {
             $this->output->writeln($note);
+        }
     }
 
     /**
@@ -72,5 +77,4 @@ class PluginRefresh extends Command
     {
         return [];
     }
-
 }

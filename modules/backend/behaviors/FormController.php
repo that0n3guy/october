@@ -8,9 +8,8 @@ use Input;
 use Redirect;
 use Backend;
 use Backend\Classes\ControllerBehavior;
-use October\Rain\Support\Util;
 use October\Rain\Router\Helper as RouterHelper;
-use System\Classes\ApplicationException;
+use ApplicationException;
 use Exception;
 
 /**
@@ -22,8 +21,30 @@ use Exception;
  */
 class FormController extends ControllerBehavior
 {
+    use \Backend\Traits\FormModelSaver;
+
     /**
-     * @var Backend\Classes\WidgetBase Reference to the widget object.
+     * @var string Default context for "create" pages.
+     */
+    const CONTEXT_CREATE = 'create';
+
+    /**
+     * @var string Default context for "update" pages.
+     */
+    const CONTEXT_UPDATE = 'update';
+
+    /**
+     * @var string Default context for "preview" pages.
+     */
+    const CONTEXT_PREVIEW = 'preview';
+
+    /**
+     * @var \Backend\Classes\Controller|FormController Reference to the back end controller.
+     */
+    protected $controller;
+
+    /**
+     * @var \Backend\Widgets\Form Reference to the widget object.
      */
     protected $formWidget;
 
@@ -45,14 +66,13 @@ class FormController extends ControllerBehavior
     protected $context;
 
     /**
-     * @var array List of prepared models that require saving.
+     * @var Model The initialized model used by the form.
      */
-    protected $modelsToSave = [];
+    protected $model;
 
     /**
      * Behavior constructor
      * @param Backend\Classes\Controller $controller
-     * @return void
      */
     public function __construct($controller)
     {
@@ -70,13 +90,31 @@ class FormController extends ControllerBehavior
      * @param Model $model
      * @return void
      */
-    public function initForm($model)
+    public function initForm($model, $context = null)
     {
+        if ($context !== null)
+            $this->context = $context;
+
         $context = $this->formGetContext();
 
-        $config = $this->makeConfig($this->config->form);
+        /*
+         * Each page can supply a unique form definition, if desired
+         */
+        $formFields = $this->config->form;
+
+        if ($context == self::CONTEXT_CREATE) {
+            $formFields = $this->getConfig('create[form]', $formFields);
+        }
+        elseif ($context == self::CONTEXT_UPDATE) {
+            $formFields = $this->getConfig('update[form]', $formFields);
+        }
+        elseif ($context == self::CONTEXT_PREVIEW) {
+            $formFields = $this->getConfig('preview[form]', $formFields);
+        }
+
+        $config = $this->makeConfig($formFields);
         $config->model = $model;
-        $config->arrayName = Str::getRealClass($model);
+        $config->arrayName = class_basename($model);
         $config->context = $context;
 
         /*
@@ -84,19 +122,24 @@ class FormController extends ControllerBehavior
          */
         $this->formWidget = $this->makeWidget('Backend\Widgets\Form', $config);
 
-        $this->formWidget->bindEvent('form.extendFieldsBefore', function() {
+        $this->formWidget->bindEvent('form.extendFieldsBefore', function () {
             $this->controller->formExtendFieldsBefore($this->formWidget);
         });
 
-        $this->formWidget->bindEvent('form.extendFields', function() {
-            $this->controller->formExtendFields($this->formWidget);
+        $this->formWidget->bindEvent('form.extendFields', function ($fields) {
+            $this->controller->formExtendFields($this->formWidget, $fields);
         });
 
-        $this->formWidget->bindEvent('form.beforeRefresh', function($saveData) {
-            return $this->controller->formExtendRefreshData($this->formWidget, $saveData);
+        $this->formWidget->bindEvent('form.beforeRefresh', function ($holder) {
+            $result = $this->controller->formExtendRefreshData($this->formWidget, $holder->data);
+            if (is_array($result)) $holder->data = $result;
         });
 
-        $this->formWidget->bindEvent('form.refresh', function($result) {
+        $this->formWidget->bindEvent('form.refreshFields', function ($fields) {
+            return $this->controller->formExtendRefreshFields($this->formWidget, $fields);
+        });
+
+        $this->formWidget->bindEvent('form.refresh', function ($result) {
             return $this->controller->formExtendRefreshResults($this->formWidget, $result);
         });
 
@@ -105,8 +148,22 @@ class FormController extends ControllerBehavior
         /*
          * Detected Relation controller behavior
          */
-        if ($this->controller->isClassExtendedWith('Backend.Behaviors.RelationController'))
+        if ($this->controller->isClassExtendedWith('Backend.Behaviors.RelationController')) {
             $this->controller->initRelation($model);
+        }
+
+        $this->prepareVars($model);
+        $this->model = $model;
+    }
+
+    /**
+     * Prepares common form data
+     */
+    protected function prepareVars($model)
+    {
+        $this->controller->vars['formModel'] = $model;
+        $this->controller->vars['formContext'] = $this->formGetContext();
+        $this->controller->vars['formRecordName'] = Lang::get($this->getConfig('name', 'backend::lang.model.name'));
     }
 
     //
@@ -121,12 +178,16 @@ class FormController extends ControllerBehavior
     public function create($context = null)
     {
         try {
-            $this->context = strlen($context) ? $context : $this->getConfig('create[context]', 'create');
-            $this->controller->pageTitle = $this->controller->pageTitle ?: $this->getLang('create[title]', 'backend::lang.form.create_title');
-            $model = $this->controller->formCreateModelObject();
-            $this->initForm($model);
+            $this->context = strlen($context) ? $context : $this->getConfig('create[context]', self::CONTEXT_CREATE);
+            $this->controller->pageTitle = $this->controller->pageTitle ?: $this->getLang(
+                'create[title]',
+                'backend::lang.form.create_title'
+            );
 
-            $this->controller->vars['formModel'] = $model;
+            $model = $this->controller->formCreateModelObject();
+            $model = $this->controller->formExtendModel($model) ?: $model;
+
+            $this->initForm($model);
         }
         catch (Exception $ex) {
             $this->controller->handleError($ex);
@@ -139,8 +200,11 @@ class FormController extends ControllerBehavior
      */
     public function create_onSave($context = null)
     {
-        $this->context = strlen($context) ? $context : $this->getConfig('create[context]', 'create');
+        $this->context = strlen($context) ? $context : $this->getConfig('create[context]', self::CONTEXT_CREATE);
+
         $model = $this->controller->formCreateModelObject();
+        $model = $this->controller->formExtendModel($model) ?: $model;
+
         $this->initForm($model);
 
         $this->controller->formBeforeSave($model);
@@ -156,8 +220,9 @@ class FormController extends ControllerBehavior
 
         Flash::success($this->getLang('create[flashSave]', 'backend::lang.form.create_success'));
 
-        if ($redirect = $this->makeRedirect('create', $model))
+        if ($redirect = $this->makeRedirect('create', $model)) {
             return $redirect;
+        }
     }
 
     //
@@ -173,12 +238,14 @@ class FormController extends ControllerBehavior
     public function update($recordId = null, $context = null)
     {
         try {
-            $this->context = strlen($context) ? $context : $this->getConfig('update[context]', 'update');
-            $this->controller->pageTitle = $this->controller->pageTitle ?: $this->getLang('update[title]', 'backend::lang.form.update_title');
+            $this->context = strlen($context) ? $context : $this->getConfig('update[context]', self::CONTEXT_UPDATE);
+            $this->controller->pageTitle = $this->controller->pageTitle ?: $this->getLang(
+                'update[title]',
+                'backend::lang.form.update_title'
+            );
+
             $model = $this->controller->formFindModelObject($recordId);
             $this->initForm($model);
-
-            $this->controller->vars['formModel'] = $model;
         }
         catch (Exception $ex) {
             $this->controller->handleError($ex);
@@ -192,14 +259,14 @@ class FormController extends ControllerBehavior
      */
     public function update_onSave($recordId = null, $context = null)
     {
-        $this->context = strlen($context) ? $context : $this->getConfig('update[context]', 'update');
+        $this->context = strlen($context) ? $context : $this->getConfig('update[context]', self::CONTEXT_UPDATE);
         $model = $this->controller->formFindModelObject($recordId);
         $this->initForm($model);
 
         $this->controller->formBeforeSave($model);
         $this->controller->formBeforeUpdate($model);
 
-        $modelsToSave =$this->prepareModelsToSave($model, $this->formWidget->getSaveData());
+        $modelsToSave = $this->prepareModelsToSave($model, $this->formWidget->getSaveData());
         foreach ($modelsToSave as $modelToSave) {
             $modelToSave->save(null, $this->formWidget->getSessionKey());
         }
@@ -209,8 +276,9 @@ class FormController extends ControllerBehavior
 
         Flash::success($this->getLang('update[flashSave]', 'backend::lang.form.update_success'));
 
-        if ($redirect = $this->makeRedirect('update', $model))
+        if ($redirect = $this->makeRedirect('update', $model)) {
             return $redirect;
+        }
     }
 
     /**
@@ -220,7 +288,7 @@ class FormController extends ControllerBehavior
      */
     public function update_onDelete($recordId = null)
     {
-        $this->context = $this->getConfig('update[context]', 'update');
+        $this->context = $this->getConfig('update[context]', self::CONTEXT_UPDATE);
         $model = $this->controller->formFindModelObject($recordId);
         $this->initForm($model);
 
@@ -230,8 +298,9 @@ class FormController extends ControllerBehavior
 
         Flash::success($this->getLang('update[flashDelete]', 'backend::lang.form.delete_success'));
 
-        if ($redirect = $this->makeRedirect('delete', $model))
+        if ($redirect = $this->makeRedirect('delete', $model)) {
             return $redirect;
+        }
     }
 
     //
@@ -247,12 +316,14 @@ class FormController extends ControllerBehavior
     public function preview($recordId = null, $context = null)
     {
         try {
-            $this->context = strlen($context) ? $context : $this->getConfig('preview[context]', 'preview');
-            $this->controller->pageTitle = $this->controller->pageTitle ?: $this->getLang('preview[title]', 'backend::lang.form.preview_title');
+            $this->context = strlen($context) ? $context : $this->getConfig('preview[context]', self::CONTEXT_PREVIEW);
+            $this->controller->pageTitle = $this->controller->pageTitle ?: $this->getLang(
+                'preview[title]',
+                'backend::lang.form.preview_title'
+            );
+
             $model = $this->controller->formFindModelObject($recordId);
             $this->initForm($model);
-
-            $this->controller->vars['formModel'] = $model;
         }
         catch (Exception $ex) {
             $this->controller->handleError($ex);
@@ -270,10 +341,20 @@ class FormController extends ControllerBehavior
      */
     public function formRender($options = [])
     {
-        if (!$this->formWidget)
+        if (!$this->formWidget) {
             throw new ApplicationException(Lang::get('backend::lang.form.behavior_not_ready'));
+        }
 
         return $this->formWidget->render($options);
+    }
+
+    /**
+     * Returns the model initialized by this form behavior.
+     * @return Model
+     */
+    public function formGetModel()
+    {
+        return $this->model;
     }
 
     /**
@@ -292,9 +373,7 @@ class FormController extends ControllerBehavior
     protected function createModel()
     {
         $class = $this->config->modelClass;
-        $model = new $class();
-
-        $model = $this->controller->formExtendModel($model);
+        $model = new $class;
         return $model;
     }
 
@@ -307,16 +386,23 @@ class FormController extends ControllerBehavior
     public function makeRedirect($context = null, $model = null)
     {
         $redirectUrl = null;
-        if (post('close') && !ends_with($context, '-close'))
+        if (post('close') && !ends_with($context, '-close')) {
             $context .= '-close';
+        }
+        
+        if (post('refresh', false)) {
+	        return Redirect::refresh();
+        }
 
-        if (post('redirect', true))
-            $redirectUrl = Backend::url($this->getRedirectUrl($context));
+        if (post('redirect', true)) {
+            $redirectUrl = $this->getRedirectUrl($context);
+        }
 
-        if ($model && $redirectUrl)
+        if ($model && $redirectUrl) {
             $redirectUrl = RouterHelper::parseValues($model, array_keys($model->getAttributes()), $redirectUrl);
+        }
 
-        return ($redirectUrl) ? Redirect::to($redirectUrl) : null;
+        return ($redirectUrl) ? Backend::redirect($redirectUrl) : null;
     }
 
     /**
@@ -336,8 +422,9 @@ class FormController extends ControllerBehavior
             'preview'      => $this->getConfig('preview[redirect]', ''),
         ];
 
-        if (!isset($redirects[$context]))
+        if (!isset($redirects[$context])) {
             return $redirects['default'];
+        }
 
         return $redirects[$context];
     }
@@ -353,10 +440,10 @@ class FormController extends ControllerBehavior
     {
         $name = $this->getConfig($name, $default);
         $vars = [
-            'name' => Lang::get($this->getConfig('name', trans('backend::lang.model.name')))
+            'name' => Lang::get($this->getConfig('name', 'backend::lang.model.name'))
         ];
         $vars = array_merge($vars, $extras);
-        return trans($name, $vars);
+        return Lang::get($name, $vars);
     }
 
     //
@@ -383,12 +470,30 @@ class FormController extends ControllerBehavior
     }
 
     /**
+     * Helper to check if a form tab has fields.
+     * @return bool
+     */
+    public function formHasOutsideFields()
+    {
+        return $this->formWidget->getTab('outside')->hasFields();
+    }
+
+    /**
      * Helper for custom layouts. Renders Outside Fields.
      * @return string The area HTML markup.
      */
     public function formRenderOutsideFields()
     {
         return $this->formRender(['section' => 'outside']);
+    }
+
+    /**
+     * Helper to check if a form tab has fields.
+     * @return bool
+     */
+    public function formHasPrimaryTabs()
+    {
+        return $this->formWidget->getTab('primary')->hasFields();
     }
 
     /**
@@ -401,10 +506,19 @@ class FormController extends ControllerBehavior
     }
 
     /**
+     * Helper to check if a form tab has fields.
+     * @return bool
+     */
+    public function formHasSecondaryTabs()
+    {
+        return $this->formWidget->getTab('secondary')->hasFields();
+    }
+
+    /**
      * Helper for custom layouts. Renders Secondary Tabs.
      * @return string The tab HTML markup.
      */
-    public function formRenderSecondaryTabs($suppressTabs = false)
+    public function formRenderSecondaryTabs()
     {
         return $this->formRender(['section' => 'secondary']);
     }
@@ -444,44 +558,57 @@ class FormController extends ControllerBehavior
      * Called before the creation or updating form is saved.
      * @param Model
      */
-    public function formBeforeSave($model) {}
+    public function formBeforeSave($model)
+    {
+    }
 
     /**
      * Called after the creation or updating form is saved.
      * @param Model
      */
-    public function formAfterSave($model) {}
+    public function formAfterSave($model)
+    {
+    }
 
     /**
      * Called before the creation form is saved.
      * @param Model
      */
-    public function formBeforeCreate($model) {}
+    public function formBeforeCreate($model)
+    {
+    }
 
     /**
      * Called after the creation form is saved.
      * @param Model
      */
-    public function formAfterCreate($model) {}
+    public function formAfterCreate($model)
+    {
+    }
 
     /**
      * Called before the updating form is saved.
      * @param Model
      */
-    public function formBeforeUpdate($model) {}
+    public function formBeforeUpdate($model)
+    {
+    }
 
     /**
      * Called after the updating form is saved.
      * @param Model
      */
-    public function formAfterUpdate($model) {}
+    public function formAfterUpdate($model)
+    {
+    }
 
     /**
      * Called after the form model is deleted.
      * @param Model
      */
-    public function formAfterDelete($model) {}
-
+    public function formAfterDelete($model)
+    {
+    }
 
     /**
      * Finds a Model record by its primary identifier, used by update actions. This logic
@@ -495,7 +622,7 @@ class FormController extends ControllerBehavior
             throw new ApplicationException($this->getLang('not-found-message', 'backend::lang.form.missing_id'));
         }
 
-        $model = $this->createModel();
+        $model = $this->controller->formCreateModelObject();
 
         /*
          * Prepare query and find model record
@@ -510,12 +637,14 @@ class FormController extends ControllerBehavior
             ]));
         }
 
+        $result = $this->controller->formExtendModel($result) ?: $result;
+
         return $result;
     }
 
     /**
-     * Creates a new instance of a form model, used by create actions. This logic
-     * can be changed by overriding it in the controller.
+     * Creates a new instance of a form model. This logic can be changed
+     * by overriding it in the controller.
      * @return Model
      */
     public function formCreateModelObject()
@@ -528,14 +657,18 @@ class FormController extends ControllerBehavior
      * @param Backend\Widgets\Form $host The hosting form widget
      * @return void
      */
-    public function formExtendFieldsBefore($host) {}
+    public function formExtendFieldsBefore($host)
+    {
+    }
 
     /**
      * Called after the form fields are defined.
      * @param Backend\Widgets\Form $host The hosting form widget
      * @return void
      */
-    public function formExtendFields($host) {}
+    public function formExtendFields($host, $fields)
+    {
+    }
 
     /**
      * Called before the form is refreshed, should return an array of additional save data.
@@ -543,7 +676,19 @@ class FormController extends ControllerBehavior
      * @param array $saveData Current save data
      * @return array
      */
-    public function formExtendRefreshData($host, $saveData) {}
+    public function formExtendRefreshData($host, $saveData)
+    {
+    }
+
+    /**
+     * Called when the form is refreshed, giving the opportunity to modify the form fields.
+     * @param Backend\Widgets\Form $host The hosting form widget
+     * @param array $fields Current form fields
+     * @return array
+     */
+    public function formExtendRefreshFields($host, $fields)
+    {
+    }
 
     /**
      * Called after the form is refreshed, should return an array of additional result parameters.
@@ -551,7 +696,9 @@ class FormController extends ControllerBehavior
      * @param array $result Current result parameters.
      * @return array
      */
-    public function formExtendRefreshResults($host, $result) {}
+    public function formExtendRefreshResults($host, $result)
+    {
+    }
 
     /**
      * Extend supplied model used by create and update actions, the model can
@@ -561,7 +708,6 @@ class FormController extends ControllerBehavior
      */
     public function formExtendModel($model)
     {
-        return $model;
     }
 
     /**
@@ -570,38 +716,24 @@ class FormController extends ControllerBehavior
      * @param October\Rain\Database\Builder $query
      * @return void
      */
-    public function formExtendQuery($query) {}
-
-    //
-    // Internals
-    //
-
-    protected function prepareModelsToSave($model, $saveData)
+    public function formExtendQuery($query)
     {
-        $this->modelsToSave = [];
-        $this->setModelAttributes($model, $saveData);
-        return $this->modelsToSave;
     }
 
     /**
-     * Sets a data collection to a model attributes, relations will also be set.
-     * @param array $saveData Data to save.
-     * @param Model $model Model to save to
-     * @return array The collection of models to save.
+     * Static helper for extending form fields.
+     * @param  callable $callback
+     * @return void
      */
-    protected function setModelAttributes($model, $saveData)
+    public static function extendFormFields($callback)
     {
-        $this->modelsToSave[] = $model;
-
-        if (!is_array($saveData))
-            return;
-
-        $singularTypes = ['belongsTo', 'hasOne', 'morphOne'];
-        foreach ($saveData as $attribute => $value) {
-            if (is_array($value) && $model->hasRelation($attribute) && in_array($model->getRelationType($attribute), $singularTypes))
-                $this->setModelAttributes($model->{$attribute}, $value);
-            else
-                $model->{$attribute} = $value;
-        }
+        $calledClass = self::getCalledExtensionClass();
+        Event::listen('backend.form.extendFields', function ($widget) use ($calledClass, $callback) {
+            if (!is_a($widget->getController(), $calledClass)) {
+                return;
+            }
+            call_user_func_array($callback, [$widget, $widget->model, $widget->getContext()]);
+        });
     }
+
 }

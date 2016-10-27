@@ -7,9 +7,11 @@ class VersionManagerTest extends TestCase
 
     public function setUp()
     {
-        include_once base_path().'/tests/fixtures/system/plugins/october/test/Plugin.php';
-        include_once base_path().'/tests/fixtures/system/plugins/october/sample/Plugin.php';
-        include_once base_path().'/tests/fixtures/system/plugins/october/noupdates/Plugin.php';
+        parent::setUp();
+
+        include_once base_path().'/tests/fixtures/plugins/october/tester/Plugin.php';
+        include_once base_path().'/tests/fixtures/plugins/october/sample/Plugin.php';
+        include_once base_path().'/tests/fixtures/plugins/october/noupdates/Plugin.php';
     }
 
     //
@@ -47,20 +49,10 @@ class VersionManagerTest extends TestCase
     // Tests
     //
 
-    public function testUpdateAll()
-    {
-        $this->markTestIncomplete('TODO');
-    }
-
-    public function testUpdatePlugin()
-    {
-        $this->markTestIncomplete('TODO');
-    }
-
     public function testGetLatestFileVersion()
     {
         $manager = VersionManager::instance();
-        $result = self::callProtectedMethod($manager, 'getLatestFileVersion', ['\October\\Test']);
+        $result = self::callProtectedMethod($manager, 'getLatestFileVersion', ['\October\\Tester']);
 
         $this->assertNotNull($result);
         $this->assertEquals('1.0.5', $result);
@@ -69,7 +61,7 @@ class VersionManagerTest extends TestCase
     public function testGetFileVersions()
     {
         $manager = VersionManager::instance();
-        $result = self::callProtectedMethod($manager, 'getFileVersions', ['\October\\Test']);
+        $result = self::callProtectedMethod($manager, 'getFileVersions', ['\October\\Tester']);
 
         $this->assertCount(5, $result);
         $this->assertArrayHasKey('1.0.1', $result);
@@ -91,7 +83,7 @@ class VersionManagerTest extends TestCase
         $this->assertArrayHasKey('1', $result);
         $this->assertArrayHasKey('1.0.*', $result);
         $this->assertArrayHasKey('1.0.x', $result);
-        $this->assertArrayHasKey('10', $result);
+        $this->assertArrayHasKey('10.3', $result);
 
         $sample = array_shift($result);
         $comment = array_shift($sample);
@@ -101,13 +93,13 @@ class VersionManagerTest extends TestCase
          * Test empty file
          */
         $result = self::callProtectedMethod($manager, 'getFileVersions', ['\October\\NoUpdates']);
-        $this->assertNull($result);
+        $this->assertEmpty($result);
     }
 
     public function testGetNewFileVersions()
     {
         $manager = VersionManager::instance();
-        $result = self::callProtectedMethod($manager, 'getNewFileVersions', ['\October\\Test', '1.0.3']);
+        $result = self::callProtectedMethod($manager, 'getNewFileVersions', ['\October\\Tester', '1.0.3']);
 
         $this->assertCount(2, $result);
         $this->assertArrayHasKey('1.0.4', $result);
@@ -117,7 +109,7 @@ class VersionManagerTest extends TestCase
          * When at version 0, should return everything
          */
         $manager = VersionManager::instance();
-        $result = self::callProtectedMethod($manager, 'getNewFileVersions', ['\October\\Test']);
+        $result = self::callProtectedMethod($manager, 'getNewFileVersions', ['\October\\Tester']);
 
         $this->assertCount(5, $result);
         $this->assertArrayHasKey('1.0.1', $result);

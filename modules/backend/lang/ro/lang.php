@@ -18,7 +18,7 @@ return [
         ],
     ],
     'partial' => [
-        'not_found' => "Partialul ':name' nu a fost gasit.",
+        'not_found_name' => "Partialul ':name' nu a fost gasit.",
     ],
     'account' => [
         'sign_out' => 'Deconectare',
@@ -191,6 +191,7 @@ return [
         'code_folding' => 'Code folding',
         'word_wrap' => 'Word wrap',
         'highlight_active_line' => 'Evidentiere linie activa',
+        'auto_closing' => 'Inchide automat tag-uri si caractere speciale',
         'show_invisibles' => 'Arata caractere invizibile',
         'show_gutter' => 'Afiseaza panou',
         'theme' => 'Schema culori',

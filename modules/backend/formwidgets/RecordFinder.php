@@ -1,8 +1,8 @@
 <?php namespace Backend\FormWidgets;
 
 use Lang;
+use ApplicationException;
 use Backend\Classes\FormWidgetBase;
-use System\Classes\SystemException;
 
 /**
  * Record Finder
@@ -11,30 +11,84 @@ use System\Classes\SystemException;
  *    user:
  *        label: User
  *        type: recordfinder
- *        list: @/plugins/rainlab/user/models/user/columns.yaml
+ *        list: ~/plugins/rainlab/user/models/user/columns.yaml
+ *        title: Find Record
  *        prompt: Click the Find button to find a user
- *        nameColumn: name
- *        descriptionColumn: email
- * 
+ *        nameFrom: name
+ *        descriptionFrom: email
+ *
  * @package october\backend
  * @author Alexey Bobkov, Samuel Georges
  */
 class RecordFinder extends FormWidgetBase
 {
+    use \Backend\Traits\FormModelWidget;
+
+    //
+    // Configurable properties
+    //
+
+    /**
+     * @var string Field name to use for key.
+     */
+    public $keyFrom = 'id';
+
+    /**
+     * @var string Relation column to display for the name
+     */
+    public $nameFrom;
+
+    /**
+     * @var string Relation column to display for the description
+     */
+    public $descriptionFrom;
+
+    /**
+     * @var string Text to display for the title of the popup list form
+     */
+    public $title = 'backend::lang.recordfinder.find_record';
+
+    /**
+     * @var string Prompt to display if no record is selected.
+     */
+    public $prompt = 'Click the %s button to find a record';
+
+    /**
+     * @var int Maximum rows to display for each page.
+     */
+    public $recordsPerPage = 10;
+
+    /**
+     * @var string Use a custom scope method for the list query.
+     */
+    public $scope;
+
+    /**
+     * @var string Filters the relation using a raw where query statement.
+     */
+    public $conditions;
+
+    /**
+     * @var string If searching the records, specifies a policy to use.
+     * - all: result must contain all words
+     * - any: result can contain any word
+     * - exact: result must contain the exact phrase
+     */
+    public $searchMode;
+
+    /**
+     * @var string Use a custom scope method for performing searches.
+     */
+    public $searchScope;
+
+    //
+    // Object properties
+    //
+
     /**
      * {@inheritDoc}
      */
-    public $defaultAlias = 'recordfinder';
-
-    /**
-     * @var string Relationship type
-     */
-    public $relationType;
-
-    /**
-     * @var string Relationship name
-     */
-    public $relationName;
+    protected $defaultAlias = 'recordfinder';
 
     /**
      * @var Model Relationship model
@@ -42,32 +96,12 @@ class RecordFinder extends FormWidgetBase
     public $relationModel;
 
     /**
-     * @var string Field name to use for key.
-     */
-    public $keyField = 'id';
-
-    /**
-     * @var string Relation column to display for the name
-     */
-    public $nameColumn;
-
-    /**
-     * @var string Relation column to display for the description
-     */
-    public $descriptionColumn;
-
-    /**
-     * @var string Prompt to display if no record is selected.
-     */
-    public $prompt;
-
-    /**
-     * @var Backend\Classes\WidgetBase Reference to the widget used for viewing (list or form).
+     * @var \Backend\Classes\WidgetBase Reference to the widget used for viewing (list or form).
      */
     protected $listWidget;
 
     /**
-     * @var Backend\Classes\WidgetBase Reference to the widget used for searching.
+     * @var \Backend\Classes\WidgetBase Reference to the widget used for searching.
      */
     protected $searchWidget;
 
@@ -76,16 +110,18 @@ class RecordFinder extends FormWidgetBase
      */
     public function init()
     {
-        $this->relationName = $this->formField->columnName;
-        $this->relationType = $this->model->getRelationType($this->relationName);
-
-        $this->prompt = $this->getConfig('prompt', 'Click the %s button to find a record');
-        $this->keyField = $this->getConfig('keyField', $this->keyField);
-        $this->nameColumn = $this->getConfig('nameColumn', $this->nameColumn);
-        $this->descriptionColumn = $this->getConfig('descriptionColumn', $this->descriptionColumn);
-
-        if (!$this->model->hasRelation($this->relationName))
-            throw new SystemException(Lang::get('backend::lang.model.missing_relation', ['class'=>get_class($this->controller), 'relation'=>$this->relationName]));
+        $this->fillFromConfig([
+            'title',
+            'prompt',
+            'keyFrom',
+            'nameFrom',
+            'descriptionFrom',
+            'scope',
+            'conditions',
+            'searchMode',
+            'searchScope',
+            'recordsPerPage',
+        ]);
 
         if (post('recordfinder_flag')) {
             $this->listWidget = $this->makeListWidget();
@@ -94,15 +130,15 @@ class RecordFinder extends FormWidgetBase
             $this->searchWidget = $this->makeSearchWidget();
             $this->searchWidget->bindToController();
 
+            $this->listWidget->setSearchTerm($this->searchWidget->getActiveTerm());
+
             /*
              * Link the Search Widget to the List Widget
              */
-            $this->searchWidget->bindEvent('search.submit', function() {
+            $this->searchWidget->bindEvent('search.submit', function () {
                 $this->listWidget->setSearchTerm($this->searchWidget->getActiveTerm());
                 return $this->listWidget->onRefresh();
             });
-
-            $this->searchWidget->setActiveTerm(null);
         }
     }
 
@@ -117,7 +153,9 @@ class RecordFinder extends FormWidgetBase
 
     public function onRefresh()
     {
-        $this->model->{$this->columnName} = post($this->formField->getName());
+        list($model, $attribute) = $this->resolveModelAttribute($this->valueFrom);
+        $model->{$attribute} = post($this->formField->getName());
+
         $this->prepareVars();
         return ['#'.$this->getId('container') => $this->makePartial('recordfinder')];
     }
@@ -127,20 +165,22 @@ class RecordFinder extends FormWidgetBase
      */
     public function prepareVars()
     {
-        $this->relationModel = $this->model->{$this->columnName};
+        $this->relationModel = $this->getLoadValue();
+
         $this->vars['value'] = $this->getKeyValue();
         $this->vars['field'] = $this->formField;
         $this->vars['nameValue'] = $this->getNameValue();
         $this->vars['descriptionValue'] = $this->getDescriptionValue();
         $this->vars['listWidget'] = $this->listWidget;
         $this->vars['searchWidget'] = $this->searchWidget;
-        $this->vars['prompt'] = str_replace('%s', '<i class="icon-th-list"></i>', $this->prompt);
+        $this->vars['title'] = $this->title;
+        $this->vars['prompt'] = str_replace('%s', '<i class="icon-th-list"></i>', e(trans($this->prompt)));
     }
 
     /**
      * {@inheritDoc}
      */
-    public function loadAssets()
+    protected function loadAssets()
     {
         $this->addJs('js/recordfinder.js', 'core');
     }
@@ -148,63 +188,98 @@ class RecordFinder extends FormWidgetBase
     /**
      * {@inheritDoc}
      */
-    public function getSaveData($value)
+    public function getSaveValue($value)
     {
         return strlen($value) ? $value : null;
     }
 
+    /**
+     * {@inheritDoc}
+     */
+    public function getLoadValue()
+    {
+        list($model, $attribute) = $this->resolveModelAttribute($this->valueFrom);
+
+        if (!is_null($model)) {
+            return $model->{$attribute};
+        }
+
+        return null;
+    }
+
     public function getKeyValue()
     {
-        if (!$this->relationModel)
+        if (!$this->relationModel) {
             return null;
+        }
 
-        return $this->relationModel->{$this->keyField};
+        return $this->relationModel->{$this->keyFrom};
     }
 
     public function getNameValue()
     {
-        if (!$this->relationModel || !$this->nameColumn)
+        if (!$this->relationModel || !$this->nameFrom) {
             return null;
+        }
 
-        return $this->relationModel->{$this->nameColumn};
+        return $this->relationModel->{$this->nameFrom};
     }
 
     public function getDescriptionValue()
     {
-        if (!$this->relationModel || !$this->descriptionColumn)
+        if (!$this->relationModel || !$this->descriptionFrom) {
             return null;
+        }
 
-        return $this->relationModel->{$this->descriptionColumn};
+        return $this->relationModel->{$this->descriptionFrom};
     }
 
     public function onFindRecord()
     {
         $this->prepareVars();
+
+        /*
+         * Purge the search term stored in session
+         */
+        if ($this->searchWidget) {
+            $this->listWidget->setSearchTerm(null);
+            $this->searchWidget->setActiveTerm(null);
+        }
+
         return $this->makePartial('recordfinder_form');
     }
 
     protected function makeListWidget()
     {
         $config = $this->makeConfig($this->getConfig('list'));
-        $config->model = $this->model->makeRelation($this->relationName);
+        $config->model = $this->getRelationModel();
         $config->alias = $this->alias . 'List';
         $config->showSetup = false;
         $config->showCheckboxes = false;
-        $config->recordsPerPage = 20;
-        $config->recordOnClick = sprintf("$('#%s').recordFinder('updateRecord', this, ':id')", $this->getId());
+        $config->recordsPerPage = $this->recordsPerPage;
+        $config->recordOnClick = sprintf("$('#%s').recordFinder('updateRecord', this, ':" . $this->keyFrom . "')", $this->getId());
         $widget = $this->makeWidget('Backend\Widgets\Lists', $config);
 
-        // $widget->bindEvent('list.extendQueryBefore', function($query) {
+        $widget->setSearchOptions([
+            'mode' => $this->searchMode,
+            'scope' => $this->searchScope,
+        ]);
 
-        //     /*
-        //      * Where not in the current list of related records
-        //      */
-        //     $existingIds = $this->findExistingRelationIds();
-        //     if (count($existingIds)) {
-        //         $query->whereNotIn('id', $existingIds);
-        //     }
-
-        // });
+        if ($sqlConditions = $this->conditions) {
+            $widget->bindEvent('list.extendQueryBefore', function($query) use ($sqlConditions) {
+                $query->whereRaw($sqlConditions);
+            });
+        }
+        elseif ($scopeMethod = $this->scope) {
+            $widget->bindEvent('list.extendQueryBefore', function($query) use ($scopeMethod) {
+                $query->$scopeMethod();
+            });
+        }
+        else {
+            $widget->bindEvent('list.extendQueryBefore', function($query) {
+                $this->getRelationObject()->addDefinedConstraintsToQuery($query);
+            });
+        }
 
         return $widget;
     }

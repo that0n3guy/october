@@ -1,10 +1,9 @@
 <?php namespace Backend\Controllers;
 
-use Lang;
 use Backend;
-use Redirect;
 use BackendMenu;
 use BackendAuth;
+use Backend\Models\UserGroup;
 use Backend\Classes\Controller;
 use System\Classes\SettingsManager;
 
@@ -33,8 +32,9 @@ class Users extends Controller
     {
         parent::__construct();
 
-        if ($this->action == 'myaccount')
+        if ($this->action == 'myaccount') {
             $this->requiredPermissions = null;
+        }
 
         BackendMenu::setContext('October.System', 'system', 'users');
         SettingsManager::setContext('October.System', 'administrators');
@@ -46,8 +46,9 @@ class Users extends Controller
     public function update($recordId, $context = null)
     {
         // Users cannot edit themselves, only use My Settings
-        if ($context != 'myaccount' && $recordId == $this->user->id)
-            return Redirect::to(Backend::url('backend/users/myaccount'));
+        if ($context != 'myaccount' && $recordId == $this->user->id) {
+            return Backend::redirect('backend/users/myaccount');
+        }
 
         return $this->asExtension('FormController')->update($recordId, $context);
     }
@@ -59,7 +60,7 @@ class Users extends Controller
     {
         SettingsManager::setContext('October.Backend', 'myaccount');
 
-        $this->pageTitle = Lang::get('backend::lang.myaccount.menu_label');
+        $this->pageTitle = 'backend::lang.myaccount.menu_label';
         return $this->update($this->user->id, 'myaccount');
     }
 
@@ -75,47 +76,59 @@ class Users extends Controller
          */
         $loginChanged = $this->user->login != post('User[login]');
         $passwordChanged = strlen(post('User[password]'));
-        if ($loginChanged || $passwordChanged)
+        if ($loginChanged || $passwordChanged) {
             BackendAuth::login($this->user->reload(), true);
+        }
 
         return $result;
     }
 
     /**
      * Add available permission fields to the User form.
+     * Mark default groups as checked for new Users.
      */
-    protected function formExtendFields($host)
+    public function formExtendFields($form)
     {
-        if ($host->getContext() == 'myaccount')
+        if ($form->getContext() == 'myaccount') {
             return;
-
-        $permissionFields = [];
-        foreach (BackendAuth::listPermissions() as $permission) {
-
-            $fieldName = 'permissions['.$permission->code.']';
-            $fieldConfig = [
-                'label' => $permission->label,
-                'comment' => $permission->comment,
-                'type' => 'balloon-selector',
-                'options' => [
-                    1 => 'backend::lang.user.allow',
-                    0 => 'backend::lang.user.inherit',
-                    -1 => 'backend::lang.user.deny',
-                ],
-                'attributes' => [
-                    'data-trigger' => "input[name='User[permissions][superuser]']",
-                    'data-trigger-type' => 'disable',
-                    'data-trigger-condition' => 'checked',
-                ],
-                'span' => 'auto',
-            ];
-
-            if (isset($permission->tab))
-                $fieldConfig['tab'] = $permission->tab;
-
-            $permissionFields[$fieldName] = $fieldConfig;
         }
 
-        $host->addTabFields($permissionFields);
+        if (!$this->user->isSuperUser()) {
+            $form->removeField('is_superuser');
+        }
+
+        /*
+         * Add permissions tab
+         */
+        $form->addTabFields($this->generatePermissionsField());
+
+        /*
+         * Mark default groups
+         */
+        if (!$form->model->exists) {
+            $defaultGroupIds = UserGroup::where('is_new_user_default', true)->lists('id');
+
+            $groupField = $form->getField('groups');
+            $groupField->value = $defaultGroupIds;
+        }
+    }
+
+    /**
+     * Adds the permissions editor widget to the form.
+     * @return array
+     */
+    protected function generatePermissionsField()
+    {
+        return [
+            'permissions' => [
+                'tab' => 'backend::lang.user.permissions',
+                'type' => 'Backend\FormWidgets\PermissionEditor',
+                'trigger' => [
+                    'action' => 'disable',
+                    'field' => 'is_superuser',
+                    'condition' => 'checked'
+                ]
+            ]
+        ];
     }
 }

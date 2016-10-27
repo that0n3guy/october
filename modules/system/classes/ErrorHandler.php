@@ -1,15 +1,16 @@
 <?php namespace System\Classes;
 
-use App;
+use Log;
 use View;
 use Config;
-use Request;
-use Response;
 use Cms\Classes\Theme;
 use Cms\Classes\Router;
 use Cms\Classes\Controller;
-use System\Classes\BaseException;
-use System\Classes\ApplicationException;
+use Cms\Classes\CmsException;
+use October\Rain\Exception\ErrorHandler as ErrorHandlerBase;
+use October\Rain\Exception\ApplicationException;
+use Twig_Error_Runtime;
+use Exception;
 
 /**
  * System Error Handler, this class handles application exception events.
@@ -17,92 +18,35 @@ use System\Classes\ApplicationException;
  * @package october\system
  * @author Alexey Bobkov, Samuel Georges
  */
-class ErrorHandler
+class ErrorHandler extends ErrorHandlerBase
 {
-
     /**
-     * @var System\Classes\ExceptionBase A prepared mask exception used to mask any exception fired.
+     * {@inheritDoc}
      */
-    protected static $activeMask;
+    // public function handleException(Exception $proposedException)
+    // {
+    //     // The Twig runtime error is not very useful
+    //     if (
+    //         $proposedException instanceof Twig_Error_Runtime &&
+    //         ($previousException = $proposedException->getPrevious()) &&
+    //         (!$previousException instanceof CmsException)
+    //     ) {
+    //         $proposedException = $previousException;
+    //     }
+
+    //     return parent::handleException($proposedException);
+    // }
 
     /**
-     * @var array A collection of masks, so multiples can be applied in order.
-     */
-    protected static $maskLayers = [];
-
-    /**
-     * All exceptions are piped through this method from the framework workflow. This method will mask
-     * any foreign exceptions with a "scent" of the native application's exception, so it can render
-     * correctly when displayed on the error page.
-     * @param Exception $proposedException The exception candidate that has been thrown.
-     * @return View Object containing the error page.
-     */
-    public function handleException(\Exception $proposedException, $httpCode = 500, $isCli = false)
-    {
-        // Disable the error handler for CLI environment
-        if ($isCli)
-            return;
-
-        // Disable the error handler for test environment
-        if (Config::getEnvironment() == 'testing')
-            return;
-
-        // Detect AJAX request and use error 500
-        if (Request::ajax())
-           return Response::make($proposedException->getMessage(), $httpCode);
-
-        // Clear the output buffer
-        while (ob_get_level())
-            ob_end_clean();
-
-        // Friendly error pages are used
-        if (Config::get('cms.customErrorPage'))
-            return $this->handleCustomError();
-
-        // If the exception is already our brand, use it.
-        if ($proposedException instanceof BaseException) {
-            $exception = $proposedException;
-        }
-        // If there is an active mask prepared, use that.
-        elseif (static::$activeMask !== null) {
-            $exception = static::$activeMask;
-            $exception->setMask($proposedException);
-        }
-        // Otherwise we should mask it with our own default scent.
-        else {
-            $exception = new ApplicationException($proposedException->getMessage(), 0);
-            $exception->setMask($proposedException);
-        }
-
-        // Ensure System view path is registered
-        View::addNamespace('system', base_path().'/modules/system/views');
-
-        return View::make('system::exception', ['exception' => $exception]);
-    }
-
-    /**
-     * Prepares a mask exception to be used when any exception fires.
-     * @param Exception $exception The mask exception.
+     * We are about to display an error page to the user,
+     * if it is an ApplicationException, this event should be logged.
      * @return void
      */
-    public static function applyMask(\Exception $exception)
+    public function beforeHandleError($exception)
     {
-        if (static::$activeMask !== null)
-            array_push(static::$maskLayers, static::$activeMask);
-
-        static::$activeMask = $exception;
-    }
-
-    /**
-     * Destroys the prepared mask by applyMask()
-     * @return void
-     */
-    public static function removeMask()
-    {
-        if (count(static::$maskLayers) > 0)
-            static::$activeMask = array_pop(static::$maskLayers);
-        else
-            static::$activeMask = null;
+        if ($exception instanceof ApplicationException) {
+            Log::error($exception);
+        }
     }
 
     /**
@@ -112,16 +56,38 @@ class ErrorHandler
      */
     public function handleCustomError()
     {
+        if (Config::get('app.debug', false))
+            return null;
+
         $theme = Theme::getActiveTheme();
 
         // Use the default view if no "/error" URL is found.
         $router = new Router($theme);
-        if (!$router->findByUrl('/error'))
+        if (!$router->findByUrl('/error')) {
             return View::make('cms::error');
+        }
 
         // Route to the CMS error page.
         $controller = new Controller($theme);
-        return $controller->run('/error');
+        $result = $controller->run('/error');
+
+        // Extract content from response object
+        if ($result instanceof \Symfony\Component\HttpFoundation\Response) {
+            $result = $result->getContent();
+        }
+
+        return $result;
     }
 
+    /**
+     * Displays the detailed system exception page.
+     * @return View Object containing the error page.
+     */
+    public function handleDetailedError($exception)
+    {
+        // Ensure System view path is registered
+        View::addNamespace('system', base_path().'/modules/system/views');
+
+        return View::make('system::exception', ['exception' => $exception]);
+    }
 }

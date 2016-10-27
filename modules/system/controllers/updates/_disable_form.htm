@@ -28,6 +28,21 @@
                 </div>
             </div>
 
+            <div class="form-group">
+                <!-- Checkbox -->
+                <div class="checkbox custom-checkbox">
+                    <input
+                        type="checkbox"
+                        name="freeze"
+                        value="1"
+                        id="pluginFreeze">
+                    <label for="pluginFreeze">
+                        <?= e(trans('system::lang.plugins.frozen_label')) ?>
+                    </label>
+                    <p class="help-block"><?= e(trans('system::lang.plugins.frozen_help')) ?></p>
+                </div>
+            </div>
+
         </div>
 
         <?php foreach ($checked as $id): ?>
@@ -41,7 +56,7 @@
             type="submit"
             class="btn btn-primary"
             data-request="onDisablePlugins"
-            data-request-confirm="<?= e(trans('backend::lang.form.plugins.disable_confirm')) ?>"
+            data-request-confirm="<?= e(trans('system::lang.plugins.disable_confirm')) ?>"
             data-stripe-load-indicator>
             <?= e(trans('backend::lang.form.apply')) ?>
         </button>

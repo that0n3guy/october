@@ -1,9 +1,8 @@
 /* ========================================================================
- * October CMS: front-end JavaScript extras
+ * OctoberCMS: front-end JavaScript extras
  * http://octobercms.com
  * ========================================================================
- * Copyright 2014 Alexey Bobkov, Samuel Georges
- *
+ * Copyright 2016 Alexey Bobkov, Samuel Georges
  * ======================================================================== */
 
 /*
@@ -23,14 +22,17 @@
     if ($.oc === undefined)
         $.oc = {}
 
-    var StripeLoadIndicator = function () {
+    var StripeLoadIndicator = function() {
+        var self = this
         this.counter = 0
         this.indicator = $('<div/>').addClass('stripe-loading-indicator loaded')
                             .append($('<div />').addClass('stripe'))
                             .append($('<div />').addClass('stripe-loaded'))
         this.stripe = this.indicator.find('.stripe')
 
-        $(document.body).append(this.indicator)
+        $(document).ready(function() {
+            $(document.body).append(self.indicator)
+        })
     }
 
     StripeLoadIndicator.prototype.show = function() {
@@ -43,7 +45,7 @@
             return
 
         this.indicator.removeClass('loaded')
-        $(document.body).addClass('loading')
+        $(document.body).addClass('oc-loading')
     }
 
     StripeLoadIndicator.prototype.hide = function(force) {
@@ -53,29 +55,32 @@
 
         if (this.counter <= 0) {
             this.indicator.addClass('loaded')
-            $(document.body).removeClass('loading')
+            $(document.body).removeClass('oc-loading')
         }
     }
 
-    $(document).ready(function(){
-        $.oc.stripeLoadIndicator = new StripeLoadIndicator()
-    })
+    $.oc.stripeLoadIndicator = new StripeLoadIndicator()
 
     // STRIPE LOAD INDICATOR DATA-API
     // ==============
 
     $(document)
-        .on('ajaxPromise', '[data-request]', function() {
+        .on('ajaxPromise', '[data-request]', function(event) {
+            // Prevent this event from bubbling up to a non-related data-request
+            // element, for example a <form> tag wrapping a <button> tag
+            event.stopPropagation()
+
             $.oc.stripeLoadIndicator.show()
 
             // This code will cover instances where the element has been removed
             // from the DOM, making the resolution event below an orphan.
-            var $el = $(this);
-            $(window).one('ajaxUpdateComplete', function(){
+            var $el = $(this)
+            $(window).one('ajaxUpdateComplete', function() {
                 if ($el.closest('html').length === 0)
                     $.oc.stripeLoadIndicator.hide()
              })
-        }).on('ajaxFail ajaxDone', '[data-request]', function() {
+        }).on('ajaxFail ajaxDone', '[data-request]', function(event) {
+            event.stopPropagation()
             $.oc.stripeLoadIndicator.hide()
         })
 

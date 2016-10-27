@@ -1,6 +1,5 @@
 <?php namespace System\Controllers;
 
-use Str;
 use Lang;
 use Flash;
 use Backend;
@@ -8,7 +7,7 @@ use Redirect;
 use BackendMenu;
 use System\Classes\SettingsManager;
 use Backend\Classes\Controller;
-use System\Classes\ApplicationException;
+use ApplicationException;
 use Exception;
 
 /**
@@ -25,20 +24,24 @@ class Settings extends Controller
      */
     protected $formWidget;
 
-    public $requiredPermissions = ['system.manage_settings'];
+    public $requiredPermissions = [];
 
     public function __construct()
     {
         parent::__construct();
 
-        $this->addCss('/modules/system/assets/css/settings.css', 'core');
+        if ($this->action == 'backend_preferences') {
+            $this->requiredPermissions = ['backend.manage_preferences'];
+        }
+
+        $this->addCss('/modules/system/assets/css/settings/settings.css', 'core');
 
         BackendMenu::setContext('October.System', 'system', 'settings');
     }
 
     public function index()
     {
-        $this->pageTitle = Lang::get('system::lang.settings.menu_label');
+        $this->pageTitle = 'system::lang.settings.menu_label';
         $this->vars['items'] = SettingsManager::instance()->listItems('system');
         $this->bodyClass = 'compact-container sidenav-tree-root';
     }
@@ -46,7 +49,7 @@ class Settings extends Controller
     public function mysettings()
     {
         BackendMenu::setContextSideMenu('mysettings');
-        $this->pageTitle = Lang::get('backend::lang.mysettings.menu_label');
+        $this->pageTitle = 'backend::lang.mysettings.menu_label';
         $this->vars['items'] = SettingsManager::instance()->listItems('mysettings');
         $this->bodyClass = 'compact-container';
     }
@@ -59,17 +62,19 @@ class Settings extends Controller
     {
         SettingsManager::setContext($author.'.'.$plugin, $code);
 
+        $this->vars['parentLink'] = Backend::url('system/settings');
+        $this->vars['parentLabel'] = Lang::get('system::lang.settings.menu_label');
+
         try {
-            $item = $this->findSettingItem($author, $plugin, $code);
+            if (!$item = $this->findSettingItem($author, $plugin, $code)) {
+                throw new ApplicationException(Lang::get('system::lang.settings.not_found'));
+            }
+
             $this->pageTitle = $item->label;
 
             if ($item->context == 'mysettings') {
                 $this->vars['parentLink'] = Backend::url('system/settings/mysettings');
                 $this->vars['parentLabel'] = Lang::get('backend::lang.mysettings.menu_label');
-            }
-            else {
-                $this->vars['parentLink'] = Backend::url('system/settings');
-                $this->vars['parentLabel'] = Lang::get('system::lang.settings.menu_label');
             }
 
             $model = $this->createModel($item);
@@ -99,11 +104,22 @@ class Settings extends Controller
          */
         if ($redirectUrl = post('redirect', true)) {
             $redirectUrl = ($item->context == 'mysettings')
-                ? Backend::url('system/settings/mysettings')
-                : Backend::url('system/settings');
+                ? 'system/settings/mysettings'
+                : 'system/settings';
 
-            return Redirect::to($redirectUrl);
+            return Backend::redirect($redirectUrl);
         }
+    }
+
+    public function update_onResetDefault($author, $plugin, $code = null)
+    {
+        $item = $this->findSettingItem($author, $plugin, $code);
+        $model = $this->createModel($item);
+        $model->resetDefault();
+
+        Flash::success(Lang::get('backend::lang.form.reset_success'));
+
+        return Backend::redirect('system/settings/update/'.$author.'/'.$plugin.'/'.$code);
     }
 
     /**
@@ -111,8 +127,9 @@ class Settings extends Controller
      */
     public function formRender($options = [])
     {
-        if (!$this->formWidget)
+        if (!$this->formWidget) {
             throw new ApplicationException(Lang::get('backend::lang.form.behavior_not_ready'));
+        }
 
         return $this->formWidget->render($options);
     }
@@ -125,7 +142,7 @@ class Settings extends Controller
     {
         $config = $model->getFieldConfig();
         $config->model = $model;
-        $config->arrayName = Str::getRealClass($model);
+        $config->arrayName = class_basename($model);
         $config->context = 'update';
 
         $widget = $this->makeWidget('Backend\Widgets\Form', $config);
@@ -138,9 +155,9 @@ class Settings extends Controller
      */
     protected function createModel($item)
     {
-        if (!isset($item->class) || !strlen($item->class))
+        if (!isset($item->class) || !strlen($item->class)) {
             throw new ApplicationException(Lang::get('system::lang.settings.missing_model'));
-
+        }
 
         $class = $item->class;
         $model = $class::instance();
@@ -166,5 +183,4 @@ class Settings extends Controller
 
         return $item;
     }
-
 }

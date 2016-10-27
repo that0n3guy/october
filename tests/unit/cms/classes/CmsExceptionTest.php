@@ -7,7 +7,7 @@ use Cms\Classes\Layout;
 use Cms\Classes\Controller;
 use Cms\Classes\CmsException;
 use Cms\Classes\CodeParser;
-use System\Classes\SystemException;
+use October\Rain\Exception\SystemException;
 
 class CmsExceptionTest extends TestCase
 {
@@ -46,31 +46,6 @@ class CmsExceptionTest extends TestCase
     // Tests
     //
 
-    public function testProcessCompoundObject()
-    {
-        $this->markTestIncomplete('TODO');
-    }
-
-    public function testProcessIni()
-    {
-        $this->markTestIncomplete('TODO');
-    }
-
-    public function testProcessPhp()
-    {
-        $this->markTestIncomplete('TODO');
-    }
-
-    public function testProcessTwig()
-    {
-        $this->markTestIncomplete('TODO');
-    }
-
-    public function testApplyMask()
-    {
-        $this->markTestIncomplete('TODO');
-    }
-
     public function testExceptionMask()
     {
         $foreignException = new \Exception('This is a general error');
@@ -82,8 +57,7 @@ class CmsExceptionTest extends TestCase
 
     public function testCmsExceptionPhp()
     {
-        $theme = new Theme();
-        $theme->load('test');
+        $theme = Theme::load('test');
         $router = new Router($theme);
         $page = $router->findByUrl('/throw-php');
 
@@ -93,7 +67,7 @@ class CmsExceptionTest extends TestCase
         $exception = new CmsException($page, 300);
         $exception->setMask($foreignException);
 
-        $this->assertEquals($page->getFullPath(), $exception->getFile());
+        $this->assertEquals($page->getFilePath(), $exception->getFile());
         $this->assertEquals('PHP Content', $exception->getErrorType());
         $this->assertEquals('This is a general error', $exception->getMessage());
     }

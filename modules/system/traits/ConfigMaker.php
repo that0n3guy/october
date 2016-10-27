@@ -1,11 +1,10 @@
 <?php namespace System\Traits;
 
-use Str;
+use Yaml;
 use File;
 use Lang;
 use Event;
-use October\Rain\Support\Yaml;
-use System\Classes\SystemException;
+use SystemException;
 use Backend\Classes\Controller;
 use stdClass;
 
@@ -26,35 +25,46 @@ trait ConfigMaker
 
     /**
      * Reads the contents of the supplied file and applies it to this object.
+     * @param array $configFile
+     * @param array $requiredConfig
+     * @return array|stdClass
      */
     public function makeConfig($configFile = [], $requiredConfig = [])
     {
+        if (!$configFile) {
+            $configFile = [];
+        }
+
         /*
          * Config already made
          */
         if (is_object($configFile)) {
             $config = $configFile;
         }
-
         /*
          * Embedded config
          */
         elseif (is_array($configFile)) {
             $config = $this->makeConfigFromArray($configFile);
         }
-
         /*
          * Process config from file contents
          */
         else {
 
-            if (isset($this->controller) && method_exists($this->controller, 'getConfigPath'))
+            if (isset($this->controller) && method_exists($this->controller, 'getConfigPath')) {
                 $configFile = $this->controller->getConfigPath($configFile);
-            else
+            }
+            else {
                 $configFile = $this->getConfigPath($configFile);
+            }
 
-            if (!File::isFile($configFile))
-                throw new SystemException(Lang::get('system::lang.config.not_found', ['file' => $configFile, 'location' => get_called_class()]));
+            if (!File::isFile($configFile)) {
+                throw new SystemException(Lang::get(
+                    'system::lang.config.not_found',
+                    ['file' => $configFile, 'location' => get_called_class()]
+                ));
+            }
 
             $config = Yaml::parse(File::get($configFile));
 
@@ -64,7 +74,9 @@ trait ConfigMaker
             $publicFile = File::localToPublic($configFile);
             if ($results = Event::fire('system.extendConfigFile', [$publicFile, $config])) {
                 foreach ($results as $result) {
-                    if (!is_array($result)) continue;
+                    if (!is_array($result)) {
+                        continue;
+                    }
                     $config = array_merge($config, $result);
                 }
             }
@@ -76,8 +88,12 @@ trait ConfigMaker
          * Validate required configuration
          */
         foreach ($requiredConfig as $property) {
-            if (!property_exists($config, $property))
-                throw new SystemException(Lang::get('system::lang.config.required', ['property' => $property, 'location' => get_called_class()]));
+            if (!property_exists($config, $property)) {
+                throw new SystemException(Lang::get(
+                    'system::lang.config.required',
+                    ['property' => $property, 'location' => get_called_class()]
+                ));
+            }
         }
 
         return $config;
@@ -87,14 +103,15 @@ trait ConfigMaker
      * Makes a config object from an array, making the first level keys properties a new object. 
      * Property values are converted to camelCase and are not set if one already exists.
      * @param array $configArray Config array.
-     * @return stdObject The config object
+     * @return stdClass The config object
      */
     public function makeConfigFromArray($configArray = [])
     {
-        $object = new stdClass();
+        $object = new stdClass;
 
-        if (!is_array($configArray))
+        if (!is_array($configArray)) {
             return $object;
+        }
 
         foreach ($configArray as $name => $value) {
             $_name = camel_case($name);
@@ -106,7 +123,7 @@ trait ConfigMaker
 
     /**
      * Locates a file based on it's definition. If the file starts with
-     * an "at symbol", it will be returned in context of the application base path,
+     * the ~ symbol it will be returned in context of the application base path,
      * otherwise it will be returned in context of the config path.
      * @param string $fileName File to load.
      * @param mixed $configPath Explicitly define a config path.
@@ -114,27 +131,32 @@ trait ConfigMaker
      */
     public function getConfigPath($fileName, $configPath = null)
     {
-        if (!isset($this->configPath))
+        if (!isset($this->configPath)) {
             $this->configPath = $this->guessConfigPath();
+        }
 
-        if (!$configPath)
+        if (!$configPath) {
             $configPath = $this->configPath;
+        }
 
-        $fileName = str_replace('@', PATH_BASE, $fileName);
+        $fileName = File::symbolizePath($fileName);
 
-        if (substr($fileName, 0, 1) == '/' || realpath($fileName) !== false)
+        if (File::isLocalPath($fileName) || realpath($fileName) !== false) {
             return $fileName;
+        }
 
-        if (!is_array($configPath))
+        if (!is_array($configPath)) {
             $configPath = [$configPath];
+        }
 
         foreach ($configPath as $path) {
             $_fileName = $path . '/' . $fileName;
-            if (File::isFile($_fileName))
-                break;
+            if (File::isFile($_fileName)) {
+                return $_fileName;
+            }
         }
 
-        return $_fileName;
+        return $fileName;
     }
 
     /**
@@ -156,10 +178,9 @@ trait ConfigMaker
      */
     public function guessConfigPathFrom($class, $suffix = '')
     {
-        $classFolder = strtolower(Str::getRealClass($class));
+        $classFolder = strtolower(class_basename($class));
         $classFile = realpath(dirname(File::fromClass($class)));
         $guessedPath = $classFile ? $classFile . '/' . $classFolder . $suffix : null;
         return $guessedPath;
     }
-
 }

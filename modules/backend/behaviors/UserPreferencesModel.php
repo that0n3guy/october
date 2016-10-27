@@ -1,15 +1,15 @@
 <?php namespace Backend\Behaviors;
 
 use System\Behaviors\SettingsModel;
-use Backend\Models\UserPreferences;
+use Backend\Models\UserPreference;
 
 /**
  * User Preferences model extension, identical to System.Behaviors.SettingsModel
- * except values are set against the logged in user's preferences via Backend\Models\UserPreferences.
+ * except values are set against the logged in user's preferences via Backend\Models\UserPreference.
  *
  * Usage:
  *
- * In the model class definition: 
+ * In the model class definition:
  *
  *   public $implement = ['Backend.Behaviors.UserPreferencesModel'];
  *   public $settingsCode = 'author.plugin::code';
@@ -18,6 +18,9 @@ use Backend\Models\UserPreferences;
  */
 class UserPreferencesModel extends SettingsModel
 {
+    /**
+     * @var array Internal cache of model objects.
+     */
     private static $instances = [];
 
     /**
@@ -27,7 +30,7 @@ class UserPreferencesModel extends SettingsModel
     {
         parent::__construct($model);
 
-        $this->model->table = 'backend_user_preferences';
+        $this->model->setTable('backend_user_preferences');
     }
 
     /**
@@ -35,21 +38,12 @@ class UserPreferencesModel extends SettingsModel
      */
     public function instance()
     {
-        if (isset(self::$instances[$this->recordCode]))
+        if (isset(self::$instances[$this->recordCode])) {
             return self::$instances[$this->recordCode];
+        }
 
-        $item = UserPreferences::forUser();
-        $item = $item->scopeFindRecord($this->model, $this->recordCode, $item->userContext)->first();
-
-        if (!$item) {
+        if (!$item = $this->getSettingsRecord()) {
             $this->model->initSettingsData();
-
-            if (method_exists($this->model, 'forceSave'))
-                $this->model->forceSave();
-            else
-                $this->model->save();
-
-            $this->model->reload();
             $item = $this->model;
         }
 
@@ -61,7 +55,22 @@ class UserPreferencesModel extends SettingsModel
      */
     public function isConfigured()
     {
-        return UserPreferences::forUser()->findRecord($this->recordCode, $item->userContext)->count() > 0;
+        return $this->getSettingsRecord() !== null;
+    }
+
+    /**
+     * Returns the raw Model record that stores the settings.
+     * @return Model
+     */
+    public function getSettingsRecord()
+    {
+        $item = UserPreference::forUser();
+        $record = $item
+            ->scopeApplyKeyAndUser($this->model, $this->recordCode, $item->userContext)
+            ->remember(1440, $this->getCacheKey())
+            ->first();
+
+        return $record ?: null;
     }
 
     /**
@@ -70,15 +79,16 @@ class UserPreferencesModel extends SettingsModel
      */
     public function beforeModelSave()
     {
-        $preferences = UserPreferences::forUser();
+        $preferences = UserPreference::forUser();
         list($namespace, $group, $item) = $preferences->parseKey($this->recordCode);
         $this->model->item = $item;
         $this->model->group = $group;
         $this->model->namespace = $namespace;
         $this->model->user_id = $preferences->userContext->id;
 
-        if ($this->fieldValues)
+        if ($this->fieldValues) {
             $this->model->value = $this->fieldValues;
+        }
     }
 
     /**
@@ -90,9 +100,20 @@ class UserPreferencesModel extends SettingsModel
         /*
          * Let the core columns through
          */
-        if ($key == 'namespace' || $key == 'group')
+        if ($key == 'namespace' || $key == 'group') {
             return true;
+        }
 
         return parent::isKeyAllowed($key);
     }
-} 
+
+    /**
+     * Returns a cache key for this record.
+     */
+    protected function getCacheKey()
+    {
+        $item = UserPreference::forUser();
+        $userId = $item->userContext ? $item->userContext->id : 0;
+        return $this->recordCode.'-userpreference-'.$userId;
+    }
+}

@@ -1,19 +1,17 @@
 <?php
 
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Database\Migrations\Migration;
+use October\Rain\Database\Schema\Blueprint;
+use October\Rain\Database\Updates\Migration;
 
 class DbBackendUserThrottle extends Migration
 {
-
     public function up()
     {
-        Schema::create('backend_user_throttle', function($table)
-        {
+        Schema::create('backend_user_throttle', function (Blueprint $table) {
             $table->engine = 'InnoDB';
             $table->increments('id');
-            $table->integer('user_id')->unsigned();
-            $table->string('ip_address')->nullable();
+            $table->integer('user_id')->unsigned()->nullable()->index();
+            $table->string('ip_address')->nullable()->index();
             $table->integer('attempts')->default(0);
             $table->timestamp('last_attempt_at')->nullable();
             $table->boolean('is_suspended')->default(0);
@@ -27,5 +25,4 @@ class DbBackendUserThrottle extends Migration
     {
         Schema::dropIfExists('backend_user_throttle');
     }
-
 }

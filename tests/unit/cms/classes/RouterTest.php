@@ -6,11 +6,12 @@ use Cms\Classes\Theme;
 class RouterTest extends TestCase
 {
     protected static $theme = null;
-    
-    public static function setUpBeforeClass()
+
+    public function setUp()
     {
-        self::$theme = new Theme();
-        self::$theme->load('test');
+        parent::setUp();
+
+        self::$theme = Theme::load('test');
     }
 
     protected static function getMethod($name)
@@ -28,7 +29,7 @@ class RouterTest extends TestCase
         $property->setAccessible(true);
         return $property;
     }
-    
+
     public function testLoadUrlMap()
     {
         $method = self::getMethod('loadUrlMap');

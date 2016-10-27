@@ -1,26 +1,15 @@
 <div data-control="toolbar">
 
-    <?php if ($relationType == 'hasMany'): ?>
+    <?php foreach ($relationToolbarButtons as $button): ?>
 
-        <?= $this->relationMakePartial('button_create') ?>
-        <?= $this->relationMakePartial('button_delete') ?>
+        <?php if ($button == 'update'): ?>
+            <?= $this->relationMakePartial('button_update', [
+                'relationManageId' => $relationViewModel->id
+            ]) ?>
+        <?php else: ?>
+            <?= $this->relationMakePartial('button_'.$button) ?>
+        <?php endif ?>
 
-    <?php elseif ($relationType == 'belongsToMany'): ?>
-
-        <?= $this->relationMakePartial('button_add') ?>
-        <?= $this->relationMakePartial('button_remove') ?>
-
-    <?php elseif ($relationType == 'belongsToTODO'): ?>
-
-        <?= $this->relationMakePartial('button_link') ?>
-        <?= $this->relationMakePartial('button_unlink') ?>
-
-    <?php elseif ($relationType == 'hasOneTODO'): ?>
-
-        <?= $this->relationMakePartial('button_create') ?>
-        <?= $this->relationMakePartial('button_update') ?>
-        <?= $this->relationMakePartial('button_delete') ?>
-
-    <?php endif ?>
+    <?php endforeach ?>
 
 </div>

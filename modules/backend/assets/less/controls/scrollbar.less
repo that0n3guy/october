@@ -3,17 +3,18 @@
 // --------------------------------------------------
 
 .drag-noselect {
-    user-select: none;
-    -o-user-select: none;
-    -moz-user-select: none;
-    -khtml-user-select: none;
-    -webkit-user-select: none;
+    .user-select(none);
 }
 
 .control-scrollbar {
     position: relative;
     overflow: hidden;
     height: 100%;
+    .transform( ~'translateZ(0)');
+
+    > div {
+        .transform( ~'translateZ(0)');
+    }
 
     >.scrollbar-scrollbar {
         position: absolute;

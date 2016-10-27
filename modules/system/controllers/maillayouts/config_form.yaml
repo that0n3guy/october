@@ -3,12 +3,12 @@
 # ===================================
 
 name: system::lang.mail_templates.layout
-form: @/modules/system/models/maillayout/fields.yaml
+form: ~/modules/system/models/maillayout/fields.yaml
 modelClass: System\Models\MailLayout
 defaultRedirect: system/mailtemplates
 
 create:
-    redirect: system/mailtemplates/update/:id
+    redirect: system/maillayouts/update/:id
     redirectClose: system/mailtemplates
 
 update:

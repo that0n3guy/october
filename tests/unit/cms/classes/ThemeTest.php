@@ -2,12 +2,15 @@
 
 use Cms\Classes\Theme;
 
-class ThemeTest extends TestCase 
+class ThemeTest extends TestCase
 {
     public function setUp()
     {
+        parent::setUp();
+
         Config::set('cms.activeTheme', 'test');
-        Event::flush('cms.activeTheme');
+        Event::flush('cms.theme.getActiveTheme');
+        Theme::resetCache();
     }
 
     protected function countThemePages($path)
@@ -29,21 +32,20 @@ class ThemeTest extends TestCase
 
     public function testGetPath()
     {
-        $theme = new Theme();
-        $theme->load('test');
+        $theme = Theme::load('test');
 
-        $this->assertEquals(base_path().'/tests/fixtures/cms/themes/test', $theme->getPath());
+        $this->assertEquals(base_path('tests/fixtures/themes/test'), $theme->getPath());
     }
 
     public function testListPages()
     {
-        $theme = new Theme();
-        $theme->load('test');
+        $theme = Theme::load('test');
 
-        $pages = $theme->listPages();
+        $pageCollection = $theme->listPages();
+        $pages = array_values($pageCollection->all());
         $this->assertInternalType('array', $pages);
 
-        $expectedPageNum = $this->countThemePages(base_path().'/tests/fixtures/Cms/themes/test/pages');
+        $expectedPageNum = $this->countThemePages(base_path().'/tests/fixtures/themes/test/pages');
         $this->assertEquals($expectedPageNum, count($pages));
 
         $this->assertInstanceOf('\Cms\Classes\Page', $pages[0]);
@@ -61,7 +63,7 @@ class ThemeTest extends TestCase
     }
 
     /**
-     * @expectedException        \System\Classes\SystemException
+     * @expectedException        \October\Rain\Exception\SystemException
      * @expectedExceptionMessage The active theme is not set.
      */
     public function testNoActiveTheme()
@@ -72,8 +74,8 @@ class ThemeTest extends TestCase
 
     public function testApiTheme()
     {
-        Event::flush('cms.activeTheme');
-        Event::listen('cms.activeTheme', function() { return 'apitest'; });
+        Event::flush('cms.theme.getActiveTheme');
+        Event::listen('cms.theme.getActiveTheme', function() { return 'apitest'; });
 
         $activeTheme = Theme::getActiveTheme();
         $this->assertNotNull($activeTheme);

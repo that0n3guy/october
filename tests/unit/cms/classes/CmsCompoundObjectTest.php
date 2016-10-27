@@ -1,35 +1,42 @@
 <?php
 
-use Cms\Classes\CmsCompoundObject;
-use Cms\Classes\CmsObject;
 use Cms\Classes\Theme;
+use Cms\Classes\CmsObject;
+use Cms\Classes\CmsCompoundObject;
+use October\Rain\Halcyon\Model;
 
 class TestCmsCompoundObject extends CmsCompoundObject
 {
-    protected function parseSettings() {}
+    protected $dirName = 'testobjects';
 
-    public static function getObjectTypeDirName()
-    {
-        return 'testobjects';
-    }
+    protected function parseSettings() {}
+}
+
+class TestParsedCmsCompoundObject extends CmsCompoundObject
+{
+    protected $dirName = 'testobjects';
 }
 
 class TestTemporaryCmsCompoundObject extends CmsCompoundObject
 {
-    protected function parseSettings() {}
+    protected $dirName = 'temporary';
 
-    public static function getObjectTypeDirName()
-    {
-        return 'temporary';
-    }
+    protected function parseSettings() {}
 }
 
-class CmsCompoundObjectTest extends TestCase 
+class CmsCompoundObjectTest extends TestCase
 {
+    public function setUp()
+    {
+        parent::setUp();
+
+        Model::clearBootedModels();
+        Model::flushEventListeners();
+    }
+
     public function testLoadFile()
     {
-        $theme = new Theme();
-        $theme->load('test');
+        $theme = Theme::load('test');
 
         $obj = TestCmsCompoundObject::load($theme, 'compound.htm');
         $this->assertContains("\$controller->data['something'] = 'some value'", $obj->code);
@@ -53,8 +60,7 @@ class CmsCompoundObjectTest extends TestCase
 
     public function testParseComponentSettings()
     {
-        $theme = new Theme();
-        $theme->load('test');
+        $theme = Theme::load('test');
 
         $obj = TestCmsCompoundObject::load($theme, 'component.htm');
         $this->assertArrayHasKey('components', $obj->settings);
@@ -64,10 +70,33 @@ class CmsCompoundObjectTest extends TestCase
         $this->assertEquals(10, $obj->settings['components']['testArchive']['posts-per-page']);
     }
 
+    public function testHasComponent()
+    {
+        $theme = Theme::load('test');
+
+        $obj = TestCmsCompoundObject::load($theme, 'components.htm');
+        $this->assertArrayHasKey('components', $obj->settings);
+
+        $this->assertInternalType('array', $obj->settings['components']);
+        $this->assertArrayHasKey('testArchive firstAlias', $obj->settings['components']);
+        $this->assertArrayHasKey('October\Tester\Components\Post secondAlias', $obj->settings['components']);
+
+        // Explicit
+        $this->assertEquals('testArchive firstAlias', $obj->hasComponent('testArchive'));
+        $this->assertEquals('October\Tester\Components\Post secondAlias', $obj->hasComponent('October\Tester\Components\Post'));
+
+        // Resolved
+        $this->assertEquals('testArchive firstAlias', $obj->hasComponent('October\Tester\Components\Archive'));
+        $this->assertEquals('October\Tester\Components\Post secondAlias', $obj->hasComponent('testPost'));
+
+        // Negative test
+        $this->assertFalse($obj->hasComponent('yooHooBigSummerBlowOut'));
+        $this->assertFalse($obj->hasComponent('October\Tester\Components\BigSummer'));
+    }
+
     public function testCache()
     {
-        $theme = new Theme();
-        $theme->load('test');
+        $theme = Theme::load('test');
         $themePath = $theme->getPath();
 
         /*
@@ -138,17 +167,13 @@ class CmsCompoundObjectTest extends TestCase
 
     public function testUndefinedProperty()
     {
-        $theme = new Theme();
-        $theme->load('test');
-
-        $obj = new TestCmsCompoundObject($theme);
+        $obj = new TestCmsCompoundObject;
         $this->assertNull($obj->something);
     }
 
     public function testSaveMarkup()
     {
-        $theme = new Theme();
-        $theme->load('apitest');
+        $theme = Theme::load('apitest');
 
         $destFilePath = $theme->getPath().'/testobjects/compound-markup.htm';
         if (file_exists($destFilePath))
@@ -156,7 +181,7 @@ class CmsCompoundObjectTest extends TestCase
 
         $this->assertFileNotExists($destFilePath);
 
-        $obj = new TestCmsCompoundObject($theme);
+        $obj = TestCmsCompoundObject::inTheme($theme);
         $obj->fill([
             'markup' => '<p>Hello, world!</p>',
             'fileName'=>'compound-markup'
@@ -167,13 +192,12 @@ class CmsCompoundObjectTest extends TestCase
         $this->assertFileExists($referenceFilePath);
 
         $this->assertFileExists($destFilePath);
-        $this->assertFileEquals($referenceFilePath, $destFilePath);
+        $this->assertFileEqualsNormalized($referenceFilePath, $destFilePath);
     }
 
     public function testSaveMarkupAndSettings()
     {
-        $theme = new Theme();
-        $theme->load('apitest');
+        $theme = Theme::load('apitest');
 
         $destFilePath = $theme->getPath().'/testobjects/compound-markup-settings.htm';
         if (file_exists($destFilePath))
@@ -181,7 +205,7 @@ class CmsCompoundObjectTest extends TestCase
 
         $this->assertFileNotExists($destFilePath);
 
-        $obj = new TestCmsCompoundObject($theme);
+        $obj = TestCmsCompoundObject::inTheme($theme);
         $obj->fill([
             'settings'=>['var'=>'value'],
             'markup' => '<p>Hello, world!</p>',
@@ -193,21 +217,21 @@ class CmsCompoundObjectTest extends TestCase
         $this->assertFileExists($referenceFilePath);
 
         $this->assertFileExists($destFilePath);
-        $this->assertFileEquals($referenceFilePath, $destFilePath);
+        $this->assertFileEqualsNormalized($referenceFilePath, $destFilePath);
     }
 
     public function testSaveFull()
     {
-        $theme = new Theme();
-        $theme->load('apitest');
+        $theme = Theme::load('apitest');
 
         $destFilePath = $theme->getPath().'/testobjects/compound.htm';
-        if (file_exists($destFilePath))
+        if (file_exists($destFilePath)) {
             unlink($destFilePath);
+        }
 
         $this->assertFileNotExists($destFilePath);
 
-        $obj = new TestCmsCompoundObject($theme);
+        $obj = TestCmsCompoundObject::inTheme($theme);
         $obj->fill([
             'fileName'=>'compound',
             'settings'=>['var'=>'value'],
@@ -220,6 +244,62 @@ class CmsCompoundObjectTest extends TestCase
         $this->assertFileExists($referenceFilePath);
 
         $this->assertFileExists($destFilePath);
-        $this->assertFileEquals($referenceFilePath, $destFilePath);
+        $this->assertFileEqualsNormalized($referenceFilePath, $destFilePath);
     }
+
+    public function testGetViewBagPopulated()
+    {
+        $theme = Theme::load('test');
+
+        $obj = TestParsedCmsCompoundObject::load($theme, 'viewbag.htm');
+        $this->assertNull($obj->code);
+        $this->assertEquals('<p>Chop Suey!</p>', $obj->markup);
+        $this->assertInternalType('array', $obj->settings);
+        $this->assertArrayHasKey('var', $obj->settings);
+        $this->assertEquals('value', $obj->settings['var']);
+
+        $this->assertArrayHasKey('components', $obj->settings);
+
+        $this->assertArrayHasKey('viewBag', $obj->settings['components']);
+        $this->assertInternalType('array', $obj->settings['components']['viewBag']);
+        $this->assertArrayHasKey('title', $obj->settings['components']['viewBag']);
+        $this->assertEquals('Toxicity', $obj->settings['components']['viewBag']['title']);
+
+        $viewBag = $obj->getViewBag();
+        $properties = $viewBag->getProperties();
+        $this->assertCount(1, $properties);
+        $this->assertEquals($obj->viewBag, $properties);
+        $this->assertInstanceOf('Cms\Classes\ViewBag', $viewBag);
+        $this->assertArrayHasKey('title', $properties);
+        $this->assertEquals('Toxicity', $properties['title']);
+    }
+
+    public function testGetViewBagEmpty()
+    {
+        $theme = Theme::load('test');
+
+        $obj = TestParsedCmsCompoundObject::load($theme, 'compound.htm');
+
+        $viewBag = $obj->getViewBag();
+        $this->assertInstanceOf('Cms\Classes\ViewBag', $viewBag);
+        $properties = $viewBag->getProperties();
+        $this->assertEmpty($properties);
+        $this->assertEquals($obj->viewBag, $properties);
+    }
+
+    //
+    // Helpers
+    //
+
+    protected function assertFileEqualsNormalized($expected, $actual)
+    {
+        $expected = file_get_contents($expected);
+        $expected = preg_replace('~\R~u', PHP_EOL, $expected); // Normalize EOL
+
+        $actual = file_get_contents($actual);
+        $actual = preg_replace('~\R~u', PHP_EOL, $actual); // Normalize EOL
+
+        $this->assertEquals($expected, $actual);
+    }
+
 }

@@ -1,11 +1,15 @@
 <?php namespace Cms\Classes;
 
-use Validator;
-use Cms\Classes\CodeBase;
-use System\Classes\SystemException;
-use Cms\Classes\FileHelper;
-use October\Rain\Support\ValidationException;
-use Cms\Classes\ViewBag;
+use Ini;
+use Lang;
+use Cache;
+use Config;
+use Cms\Twig\Loader as TwigLoader;
+use Cms\Twig\Extension as CmsTwigExtension;
+use System\Twig\Extension as SystemTwigExtension;
+use October\Rain\Halcyon\Processors\SectionParser;
+use Twig_Environment;
+use ApplicationException;
 
 /**
  * This is a base class for CMS objects that have multiple sections - pages, partials and layouts.
@@ -23,125 +27,175 @@ class CmsCompoundObject extends CmsObject
     public $components = [];
 
     /**
-     * @var array INI settings defined in the template file.
+     * @var array INI settings defined in the template file. Not to be confused
+     * with the attribute called settings. In this array, components are bumped
+     * to their own array inside the 'components' key.
      */
-    public $settings = [];
-
-    /**
-     * @var string PHP code section of the template file.
-     */
-    public $code;
-
-    /**
-     * @var string Twig markup section of the template file.
-     */
-    public $markup;
-
-    protected static $fillable = [
-        'markup',
-        'settings',
-        'code',
-        'fileName'
+    public $settings = [
+        'components' => []
     ];
 
-    protected $settingsValidationRules = [];
+    /**
+     * @var array Contains the view bag properties.
+     * This property is used by the page editor internally.
+     */
+    public $viewBag = [];
 
-    protected $settingsValidationMessages = [];
+    /**
+     * @var array The attributes that are mass assignable.
+     */
+    protected $fillable = [
+        'markup',
+        'settings',
+        'code'
+    ];
 
-    protected $viewBagValidationRules = [];
+    /**
+     * The methods that should be returned from the collection of all objects.
+     *
+     * @var array
+     */
+    protected $passthru = [
+        'lists',
+        'where',
+        'sortBy',
+        'whereComponent',
+        'withComponent'
+    ];
 
-    protected $viewBagValidationMessages = [];
+    /**
+     * @var bool Model supports code and settings sections.
+     */
+    protected $isCompoundObject = true;
 
+    /**
+     * @var array|null Cache for component properties.
+     */
+    protected static $objectComponentPropertyMap = null;
+
+    /**
+     * @var mixed Cache store for the getViewBag method.
+     */
     protected $viewBagCache = false;
 
     /**
-     * Loads the object from a file.
-     * @param \Cms\Classes\Theme $theme Specifies the theme the object belongs to.
-     * @param string $fileName Specifies the file name, with the extension.
-     * The file name can contain only alphanumeric symbols, dashes and dots.
-     * @return boolean Returns true if the object was successfully loaded. Otherwise returns false.
-     */
-    public static function load($theme, $fileName)
-    {
-        if (($obj = parent::load($theme, $fileName)) === null)
-            return null;
-
-        CmsException::mask($obj, 200);
-        $parsedData = SectionParser::parse($obj->content);
-        CmsException::unmask();
-
-        $obj->settings = $parsedData['settings'];
-        $obj->code = $parsedData['code'];
-        $obj->markup = $parsedData['markup'];
-
-        $obj->parseComponentSettings();
-        $obj->parseSettings();
-
-        return $obj;
-    }
-
-    /**
-     * Implements getter functionality for properties defined in the settings section.
-     */
-    public function __get($name)
-    {
-        if (is_array($this->settings) && array_key_exists($name, $this->settings))
-            return $this->settings[$name];
-
-        return parent::__get($name);
-    }
-
-    /**
-     * Determine if an attribute exists on the object.
-     *
-     * @param  string  $key
+     * Triggered after the object is loaded.
      * @return void
      */
-    public function __isset($key)
+    public function afterFetch()
     {
-        if (parent::__isset($key) === true)
-            return true;
-
-        return isset($this->settings[$key]);
+        $this->parseComponentSettings();
+        $this->validateSettings();
+        $this->parseSettings();
     }
 
     /**
-     * Returns the Twig content string
+     * Triggered when the model is saved.
+     * @return void
      */
-    public function getTwigContent()
+    public function beforeSave()
     {
-        return $this->markup;
+        $this->checkSafeMode();
     }
 
     /**
-     * Runs components defined in the settings
-     * Process halts if a component returns a value
+     * Create a new Collection instance.
+     *
+     * @param  array  $models
+     * @return \October\Rain\Halcyon\Collection
      */
-    public function runComponents()
+    public function newCollection(array $models = [])
     {
-        foreach ($this->components as $component) {
-            if ($result = $component->onRun())
-                return $result;
+        return new CmsObjectCollection($models);
+    }
+
+    /**
+     * If the model is loaded with an invalid INI section, the invalid content will be
+     * passed as a special attribute. Look for it, then locate the failure reason.
+     * @return void
+     */
+    protected function validateSettings()
+    {
+        if (isset($this->attributes[SectionParser::ERROR_INI])) {
+            CmsException::mask($this, 200);
+            Ini::parse($this->attributes[SectionParser::ERROR_INI]);
+            CmsException::unmask();
         }
     }
 
     /**
-     * Parse component sections. 
-     * Replace the multiple component sections with a single "components" 
-     * element in the $settings property.
+     * Parses the settings array.
+     * Child classes can override this method in order to update the content
+     * of the $settings property after the object is loaded from a file.
+     * @return void
      */
-    public function parseComponentSettings()
+    protected function parseSettings()
     {
+        $this->fillViewBagArray();
+    }
+
+    /**
+     * This method checks if safe mode is enabled by config, and the code
+     * attribute is modified and populated. If so an exception is thrown.
+     * @return void
+     */
+    protected function checkSafeMode()
+    {
+        $safeMode = Config::get('cms.enableSafeMode', null);
+        if ($safeMode === null) {
+            $safeMode = !Config::get('app.debug', false);
+        }
+
+        if ($safeMode && $this->isDirty('code') && strlen(trim($this->code))) {
+            throw new ApplicationException(Lang::get('cms::lang.cms_object.safe_mode_enabled'));
+        }
+    }
+
+    //
+    // Components
+    //
+
+    /**
+     * Runs components defined in the settings
+     * Process halts if a component returns a value
+     * @return void
+     */
+    public function runComponents()
+    {
+        foreach ($this->components as $component) {
+            if ($event = $component->fireEvent('component.beforeRun', [], true)) {
+                return $event;
+            }
+
+            if ($result = $component->onRun()) {
+                return $result;
+            }
+
+            if ($event = $component->fireEvent('component.run', [], true)) {
+                return $event;
+            }
+        }
+    }
+
+    /**
+     * Parse component sections.
+     * Replace the multiple component sections with a single "components"
+     * element in the $settings property.
+     * @return void
+     */
+    protected function parseComponentSettings()
+    {
+        $this->settings = $this->getSettingsAttribute();
+
         $manager = ComponentManager::instance();
         $components = [];
         foreach ($this->settings as $setting => $value) {
-            if (!is_array($value))
+            if (!is_array($value)) {
                 continue;
+            }
 
             $settingParts = explode(' ', $setting);
             $settingName = $settingParts[0];
-            // if (!$manager->hasComponent($settingName))
-            //     continue;
 
             $components[$setting] = $value;
             unset($this->settings[$setting]);
@@ -151,66 +205,144 @@ class CmsCompoundObject extends CmsObject
     }
 
     /**
-     * Returns name of a PHP class to us a parent for the PHP class created for the object's PHP section.
-     * @return mixed Returns the class name or null.
+     * Returns a component by its name.
+     * This method is used only in the back-end and for internal system needs when 
+     * the standard way to access components is not an option.
+     * @param string $componentName Specifies the component name.
+     * @return \Cms\Classes\ComponentBase Returns the component instance or null.
      */
-    public function getCodeClassParent()
+    public function getComponent($componentName)
     {
-        return null;
-    }
-
-    /**
-     * Sets the PHP code content string.
-     * @param string $value Specifies the PHP code string.
-     * @return \Cms\Classes\CmsCompoundObject Returns the object instance.
-     */
-    public function setCode($value)
-    {
-        $value = trim($value);
-        $this->code = $value;
-    }
-
-    /**
-     * Saves the object to the disk.
-     */
-    public function save()
-    {
-        $this->code = trim($this->code);
-        $this->markup = trim($this->markup);
-
-        $trim = function(&$values) use (&$trim) {
-            foreach ($values as &$value) {
-                if (!is_array($value))
-                    $value = trim($value);
-                else $trim($value);
-            }
-        };
-
-        $trim($this->settings);
-
-        if (array_key_exists('components', $this->settings) && count($this->settings['components']) == 0)
-            unset($this->settings['components']);
-
-        $this->validate();
-
-        $content = [];
-
-        if ($this->settings)
-            $content[] = FileHelper::formatIniString($this->settings);
-
-        if ($this->code) {
-            $code = preg_replace('/^\<\?php/', '', $this->code);
-            $code = preg_replace('/^\<\?/', '', $code);
-            $code = preg_replace('/\?>$/', '', $code);
-
-            $content[] = '<?php'.PHP_EOL.$this->code.PHP_EOL.'?>';
+        if (!($componentSection = $this->hasComponent($componentName))) {
+            return null;
         }
 
-        $content[] = $this->markup;
-
-        $this->content = trim(implode(PHP_EOL.'=='.PHP_EOL, $content));
-        parent::save();
+        return ComponentManager::instance()->makeComponent(
+            $componentName,
+            null,
+            $this->settings['components'][$componentSection]
+        );
     }
+
+    /**
+     * Checks if the object has a component with the specified name.
+     * @param string $componentName Specifies the component name.
+     * @return mixed Return false or the full component name used on the page (it could include the alias).
+     */
+    public function hasComponent($componentName)
+    {
+        $componentManager = ComponentManager::instance();
+        $componentName = $componentManager->resolve($componentName);
+
+        foreach ($this->settings['components'] as $sectionName => $values) {
+
+            $result = $sectionName;
+
+            if ($sectionName == $componentName) {
+                return $result;
+            }
+
+            $parts = explode(' ', $sectionName);
+            if (count($parts) > 1) {
+                $sectionName = trim($parts[0]);
+
+                if ($sectionName == $componentName) {
+                    return $result;
+                }
+            }
+
+            $sectionName = $componentManager->resolve($sectionName);
+            if ($sectionName == $componentName) {
+                return $result;
+            }
+
+        }
+
+        return false;
+    }
+
+    /**
+     * Returns component property names and values.
+     * This method implements caching and can be used in the run-time on the front-end.
+     * @param string $componentName Specifies the component name.
+     * @return array Returns an associative array with property names in the keys and property values in the values.
+     */
+    public function getComponentProperties($componentName)
+    {
+        $key = crc32($this->theme->getPath()).'component-properties';
+
+        if (self::$objectComponentPropertyMap !== null) {
+            $objectComponentMap = self::$objectComponentPropertyMap;
+        }
+        else {
+            $cached = Cache::get($key, false);
+            $unserialized = $cached ? @unserialize(@base64_decode($cached)) : false;
+            $objectComponentMap = $unserialized ? $unserialized : [];
+            if ($objectComponentMap) {
+                self::$objectComponentPropertyMap = $objectComponentMap;
+            }
+        }
+
+        $objectCode = $this->getBaseFileName();
+
+        if (array_key_exists($objectCode, $objectComponentMap)) {
+            if (array_key_exists($componentName, $objectComponentMap[$objectCode])) {
+                return $objectComponentMap[$objectCode][$componentName];
+            }
+
+            return [];
+        }
+
+        if (!isset($this->settings['components'])) {
+            $objectComponentMap[$objectCode] = [];
+        }
+        else {
+            foreach ($this->settings['components'] as $name => $settings) {
+                $nameParts = explode(' ', $name);
+                if (count($nameParts > 1)) {
+                    $name = trim($nameParts[0]);
+                }
+
+                $component = $this->getComponent($name);
+                if (!$component) {
+                    continue;
+                }
+
+                $componentProperties = [];
+                $propertyDefinitions = $component->defineProperties();
+                foreach ($propertyDefinitions as $propertyName => $propertyInfo) {
+                    $componentProperties[$propertyName] = $component->property($propertyName);
+                }
+
+                $objectComponentMap[$objectCode][$name] = $componentProperties;
+            }
+        }
+
+        self::$objectComponentPropertyMap = $objectComponentMap;
+
+        Cache::put($key, base64_encode(serialize($objectComponentMap)), Config::get('cms.parsedPageCacheTTL', 10));
+
+        if (array_key_exists($componentName, $objectComponentMap[$objectCode])) {
+            return $objectComponentMap[$objectCode][$componentName];
+        }
+
+        return [];
+    }
+
+    /**
+     * Clears the object cache.
+     * @param \Cms\Classes\Theme $theme Specifies a parent theme.
+     * @return void
+     */
+    public static function clearCache($theme)
+    {
+        $key = crc32($theme->getPath()).'component-properties';
+        Cache::forget($key);
+    }
+
+    //
+    // View Bag
+    //
 
     /**
      * Returns the configured view bag component.
@@ -220,8 +352,9 @@ class CmsCompoundObject extends CmsObject
      */
     public function getViewBag()
     {
-        if ($this->viewBagCache !== false)
+        if ($this->viewBagCache !== false) {
             return $this->viewBagCache;
+        }
 
         $componentName = 'viewBag';
 
@@ -232,57 +365,128 @@ class CmsCompoundObject extends CmsObject
             return $this->viewBagCache = $viewBag;
         }
 
-        return $this->viewBagCache = ComponentManager::instance()->makeComponent(
-            $componentName, 
-            null, 
-            $this->settings['components'][$componentName]);
-    }
-
-
-    /**
-     * Parses the settings array.
-     * Child classes can override this method in order to update
-     * the content of the $settings property after the object
-     * is loaded from a file.
-     */
-    protected function parseSettings() {}
-
-    /**
-     * Initializes the object properties from the cached data.
-     * @param array $cached The cached data array.
-     */
-    protected function initFromCache($cached)
-    {
-        $this->settings = $cached['settings'];
-        $this->code = $cached['code'];
-        $this->markup = $cached['markup'];
+        return $this->viewBagCache = $this->getComponent($componentName);
     }
 
     /**
-     * Initializes a cache item.
-     * @param array &$item The cached item array.
+     * Copies view bag properties to the view bag array.
+     * This is required for the back-end editors.
+     * @return void
      */
-    protected function initCacheItem(&$item)
+    protected function fillViewBagArray()
     {
-        $item['settings'] = $this->settings;
-        $item['code'] = $this->code;
-        $item['markup'] = $this->markup;
+        $viewBag = $this->getViewBag();
+        foreach ($viewBag->getProperties() as $name => $value) {
+            $this->viewBag[$name] = $value;
+        }
+
+        $this->fireEvent('cmsObject.fillViewBagArray');
+    }
+
+    //
+    // Twig
+    //
+
+    /**
+     * Returns the Twig content string
+     * @return string
+     */
+    public function getTwigContent()
+    {
+        return $this->markup;
     }
 
     /**
-     * Validates the object properties.
-     * Throws a ValidationException in case of an error.
+     * Returns Twig node tree generated from the object's markup.
+     * This method is used by the system internally and shouldn't
+     * participate in the front-end request processing.
+     * @link http://twig.sensiolabs.org/doc/internals.html Twig internals
+     * @param mixed $markup Specifies the markup content.
+     * Use FALSE to load the content from the markup section.
+     * @return Twig_Node_Module A node tree
      */
-    protected function validate()
+    public function getTwigNodeTree($markup = false)
     {
-        $validation = Validator::make($this->settings, $this->settingsValidationRules, $this->settingsValidationMessages);
-        if ($validation->fails())
-            throw new ValidationException($validation);
+        $loader = new TwigLoader();
+        $twig = new Twig_Environment($loader, []);
+        $twig->addExtension(new CmsTwigExtension());
+        $twig->addExtension(new SystemTwigExtension);
 
-        if ($this->viewBagValidationRules && isset($this->settings['viewBag'])) {
-            $validation = Validator::make($this->settings['viewBag'], $this->viewBagValidationRules, $this->viewBagValidationMessages);
-            if ($validation->fails())
-                throw new ValidationException($validation);
+        $stream = $twig->tokenize($markup === false ? $this->markup : $markup, 'getTwigNodeTree');
+        return $twig->parse($stream);
+    }
+
+    //
+    // Magic
+    //
+
+    /**
+     * Implements getter functionality for visible properties defined in
+     * the settings section or view bag array.
+     */
+    public function __get($name)
+    {
+        if (is_array($this->settings) && array_key_exists($name, $this->settings)) {
+            return $this->settings[$name];
+        }
+
+        if (is_array($this->viewBag) && array_key_exists($name, $this->viewBag)) {
+            return $this->viewBag[$name];
+        }
+
+        return parent::__get($name);
+    }
+
+    /**
+     * Dynamically set attributes on the model.
+     *
+     * @param  string  $key
+     * @param  mixed  $value
+     * @return void
+     */
+    public function __set($key, $value)
+    {
+        parent::__set($key, $value);
+
+        if (array_key_exists($key, $this->settings)) {
+            $this->settings[$key] = $this->attributes[$key];
         }
     }
+
+    /**
+     * Determine if an attribute exists on the object.
+     *
+     * @param  string  $key
+     * @return bool
+     */
+    public function __isset($key)
+    {
+        if (parent::__isset($key) === true) {
+            return true;
+        }
+
+        if (isset($this->viewBag[$key]) === true) {
+            return true;
+        }
+
+        return isset($this->settings[$key]);
+    }
+
+    /**
+     * Dynamically handle calls into the query instance.
+     *
+     * @param  string  $method
+     * @param  array   $parameters
+     * @return mixed
+     */
+    public function __call($method, $parameters)
+    {
+        if (in_array($method, $this->passthru)) {
+            $collection = $this->get();
+            return call_user_func_array([$collection, $method], $parameters);
+        }
+
+        return parent::__call($method, $parameters);
+    }
+
 }

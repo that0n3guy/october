@@ -6,12 +6,15 @@ columns:
     created_at:
         label: backend::lang.access_log.created_at
         searchable: yes
+        type: timetense
+        width: 160px
 
     login:
         label: backend::lang.access_log.login
         relation: user
-        select: @login
+        select: login
         searchable: yes
+        sortable: false
 
     ip_address:
         label: backend::lang.access_log.ip_address
@@ -20,17 +23,20 @@ columns:
     first_name:
         label: backend::lang.access_log.first_name
         relation: user
-        select: @first_name
+        select: first_name
         searchable: yes
+        sortable: false
 
     last_name:
         label: backend::lang.access_log.last_name
         relation: user
-        select: @last_name
+        select: last_name
         searchable: yes
+        sortable: false
 
     email:
         label: backend::lang.access_log.email
         relation: user
-        select: @email
+        select: email
         searchable: yes
+        sortable: false

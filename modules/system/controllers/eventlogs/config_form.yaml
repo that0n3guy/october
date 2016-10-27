@@ -3,10 +3,10 @@
 # ===================================
 
 # Record name
-name: Log
+name: system::lang.event_log.menu_label
 
 # Model Form Field configuration
-form: @/modules/system/models/eventlog/fields.yaml
+form: ~/modules/system/models/eventlog/fields.yaml
 
 # Model Class name
 modelClass: System\Models\EventLog
@@ -16,4 +16,4 @@ defaultRedirect: system/eventlogs
 
 # Preview page
 preview:
-    title: Event
+    title: system::lang.event_log.preview_title

@@ -30,7 +30,7 @@
     }
 
     FileList.DEFAULTS = {
-
+        ignoreItemClick: false
     }
 
     FileList.prototype.init = function (){
@@ -42,12 +42,16 @@
             return false;
         });
 
-        this.$el.on('click', 'li.item > a', function(event) {
-            var e = $.Event('open.oc.list', {relatedTarget: $(this).parent().get(0), clickEvent: event})
-            self.$el.trigger(e, this)
+        if (!this.options.ignoreItemClick) {
+            this.$el.on('click', 'li.item > a', function(event) {
+                var e = $.Event('open.oc.list', {relatedTarget: $(this).parent().get(0), clickEvent: event})
+                self.$el.trigger(e, this)
 
-            return false
-        })
+                return false
+            })
+        }
+
+        this.$el.on('ajaxUpdate', $.proxy(this.update, this))
     }
 
     FileList.prototype.toggleGroup = function(group) {
@@ -112,6 +116,13 @@
         $('li.item', this.$el).removeClass('active')
         if (dataId)
             $('li.item[data-id="'+dataId+'"]', this.$el).addClass('active')
+
+        this.dataId = dataId
+    }
+
+    FileList.prototype.update = function() {
+        if (this.dataId !== undefined)
+            this.markActive(this.dataId)
     }
 
     // FILELIST PLUGIN DEFINITION

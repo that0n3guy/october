@@ -3,7 +3,6 @@
  * 
  * Note the element must have a height set for vertical,
  * and a width set for horizontal.
- *
  * 
  * Data attributes:
  * - data-control="scrollbar" - enables the scrollbar plugin
@@ -15,10 +14,12 @@
  * - Mouse Wheel plugin (mousewheel.js)
  */
 +function ($) { "use strict";
+    var Base = $.oc.foundation.base,
+        BaseProto = Base.prototype
 
     var Scrollbar = function (element, options) {
 
-        var 
+        var
             $el = this.$el  = $(element),
             el = $el.get(0),
             self = this,
@@ -30,6 +31,12 @@
             eventElementName = options.vertical ? 'pageY' : 'pageX',
             dragStart = 0,
             startOffset = 0;
+
+        $.oc.foundation.controlUtils.markDisposable(element)
+
+        Base.call(this)
+
+        this.$el.one('dispose-control', this.proxy(this.dispose))
 
         /*
          * Create Scrollbar
@@ -68,7 +75,7 @@
         $el.mousewheel(function (event){
             var offset = self.options.vertical
                 ? ((event.deltaFactor * event.deltaY) * -1)
-                : ((event.deltaFactor * event.deltaX) * -1)
+                : (event.deltaFactor * event.deltaX)
 
             return !scrollWheel(offset * self.options.scrollSpeed)
         })
@@ -202,15 +209,32 @@
         setTimeout(function() { self.update() }, 1);
     }
 
+    Scrollbar.prototype = Object.create(BaseProto)
+    Scrollbar.prototype.constructor = Scrollbar
+
+    Scrollbar.prototype.dispose = function() {
+        this.unregisterHandlers()
+
+        BaseProto.dispose.call(this)
+    }
+
+    Scrollbar.prototype.unregisterHandlers = function() {
+
+    }
+
     Scrollbar.DEFAULTS = {
         vertical: true,
         scrollSpeed: 2,
+        animation: true,
         start: function() {},
         drag: function() {},
         stop: function() {}
     }
 
     Scrollbar.prototype.update = function() {
+        if (!this.$scrollbar)
+            return
+
         this.$scrollbar.hide()
         this.setThumbSize()
         this.setThumbPosition()
@@ -308,14 +332,24 @@
         } else {
             offset = $el.get(0).offsetTop - this.$el.scrollTop()
 
-            if (offset < 0) {
-                this.$el.animate({'scrollTop': $el.get(0).offsetTop}, params)
-                animated = true
-            } else {
-                offset = $el.get(0).offsetTop - (this.$el.scrollTop() + this.$el.outerHeight())
-                if (offset > 0) {
-                    this.$el.animate({'scrollTop': $el.get(0).offsetTop + $el.outerHeight() - this.$el.outerHeight()}, params)
+            if (this.options.animation) {
+                if (offset < 0) {
+                    this.$el.animate({'scrollTop': $el.get(0).offsetTop}, params)
                     animated = true
+                } else {
+                    offset = $el.get(0).offsetTop - (this.$el.scrollTop() + this.$el.outerHeight())
+                    if (offset > 0) {
+                        this.$el.animate({'scrollTop': $el.get(0).offsetTop + $el.outerHeight() - this.$el.outerHeight()}, params)
+                        animated = true
+                    }
+                }
+            } else {
+                if (offset < 0) {
+                    this.$el.scrollTop($el.get(0).offsetTop)
+                } else {
+                    offset = $el.get(0).offsetTop - (this.$el.scrollTop() + this.$el.outerHeight())
+                    if (offset > 0)
+                        this.$el.scrollTop($el.get(0).offsetTop + $el.outerHeight() - this.$el.outerHeight())
                 }
             }
         }
@@ -324,6 +358,13 @@
             callback()
 
         return this
+    }
+
+    Scrollbar.prototype.dispose = function() {
+        this.$el = null
+        this.$scrollbar = null
+        this.$track = null
+        this.$thumb = null
     }
 
     // SCROLLBAR PLUGIN DEFINITION

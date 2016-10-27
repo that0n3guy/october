@@ -1,14 +1,14 @@
 //
 // Simple List
 // --------------------------------------------------
-// Usage:
+// Usage (bullets):
 //   <div class="control-simplelist">
 //       <ul>
 //           <li>Hello friend</li>
 //       </ul>
 //   </div>
 //
-// With icons:
+// With icons (no bullets):
 //   <div class="control-simplelist with-icons">
 //       <ul>
 //           <li class="oc-icon-check">Hello friend</li>
@@ -26,10 +26,33 @@
 //           </li>
 //       </ul>
 //   </div>
+//
+// Divided (basic):
+//   <div class="control-simplelist is-divided">
+//       <ul>
+//           <li>Hello friend</li>
+//       </ul>
+//   </div>
+//
+// Selectable:
+//   <div class="control-simplelist is-selectable">
+//       <ul>
+//           <li>
+//               <a href="#">
+//                   <h5 class="heading">Hello friend</h5>
+//                   <p class="description">Something cool over here</p>
+//               </a>
+//           </li>
+//       </ul>
+//   </div>
+//
 
 .control-simplelist {
-
     font-size: 13px;
+    padding: 20px 20px 2px 20px;
+    margin-bottom: @padding-standard;
+    background: @color-form-checkboxlist-background;
+    .border-radius(@border-radius-base);
 
     ul { padding-left: 15px; }
 
@@ -41,14 +64,35 @@
         }
     }
 
-    &.with-icons, &.with-checkboxes, &.is-selectable {
+    &.with-icons,
+    &.with-checkboxes,
+    &.is-divided,
+    &.is-selectable {
         ul {
             list-style-type: none;
             padding-left: 0;
         }
     }
 
-    &.with-checkboxes {}
+    &.with-checkboxes {
+        li {
+            margin-top: -5px;
+
+            &:first-child {
+                margin-top: 0;
+            }
+
+            &:last-child {
+                div.custom-checkbox {
+                    margin-bottom: 0;
+
+                    label {
+                        margin-bottom: 5px;
+                    }
+                }
+            }
+        }
+    }
 
     &.is-sortable {
 
@@ -80,7 +124,10 @@
         &.size-giant { min-height: @size-giant + 200; }
     }
 
+    &.is-divided,
     &.is-selectable {
+        padding: 0;
+
         li {
             padding: 5px 10px;
             border-bottom: 1px solid @color-list-border;
@@ -88,9 +135,17 @@
                 font-size: 14px;
                 font-weight: bold;
             }
-            .description {
 
+            .description {}
+
+            &:last-child {
+                border-bottom: none;
             }
+        }
+    }
+
+    &.is-selectable {
+        li {
             a {
                 padding: 5px 10px;
                 margin: -5px -10px;
@@ -104,8 +159,13 @@
                 a { text-decoration: none; }
             }
 
-            &:last-child {
-                border-bottom: none;
+            &.active {
+                a {
+                    background: #f0f0f0;
+                    &:hover {
+                        background: @color-list-hover-bg;
+                    }
+                }
             }
         }
     }

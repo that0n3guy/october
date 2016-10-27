@@ -1,17 +1,24 @@
 <div class="layout responsive-sidebar">
     <div class="layout-cell">
-        <!-- Breadcrumb -->
-        <?php if ($breadcrumbContent = Block::placeholder('breadcrumb')): ?>
-            <div class="control-breadcrumb">
-                <?= $breadcrumbContent ?>
-            </div>
-        <?php endif ?>
 
-        <div class="padded-container">
-            <?= Block::placeholder('form-contents') ?>
+        <div class="layout">
+            <?php if ($breadcrumbContent = Block::placeholder('breadcrumb')): ?>
+                <!-- Breadcrumb -->
+                <div class="control-breadcrumb breadcrumb-flush">
+                    <?= $breadcrumbContent ?>
+                </div>
+            <?php endif ?>
+
+            <!-- Content -->
+            <div class="layout-row">
+                <div class="padded-container layout">
+                    <?= Block::placeholder('form-contents') ?>
+                </div>
+            </div>
         </div>
+
     </div>
-    <div class="layout-cell width-300 form-sidebar control-scrollpanel">
+    <div class="layout-cell w-300 form-sidebar control-scrollpanel">
         <div class="layout-relative">
             <div class="layout-absolute">
                 <div class="control-scrollbar" data-control="scrollbar">

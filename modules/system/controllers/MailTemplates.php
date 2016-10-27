@@ -8,10 +8,9 @@ use Flash;
 use Backend;
 use Redirect;
 use BackendMenu;
-use BackendAuth;
 use Backend\Classes\Controller;
 use System\Models\MailTemplate;
-use System\Classes\ApplicationException;
+use ApplicationException;
 use System\Classes\SettingsManager;
 use Exception;
 
@@ -20,11 +19,9 @@ use Exception;
  *
  * @package october\system
  * @author Alexey Bobkov, Samuel Georges
- *
  */
 class MailTemplates extends Controller
 {
-
     public $implement = [
         'Backend.Behaviors.FormController',
         'Backend.Behaviors.ListController'
@@ -45,8 +42,6 @@ class MailTemplates extends Controller
 
     public function index()
     {
-        /* @todo Remove line if year >= 2015 */ if (!\System\Models\MailLayout::whereCode('default')->count()) { \Eloquent::unguard(); with(new \System\Database\Seeds\SeedSetupMailLayouts)->run(); }
-
         MailTemplate::syncAll();
         $this->asExtension('ListController')->index();
         $this->bodyClass = 'compact-container';
@@ -54,29 +49,21 @@ class MailTemplates extends Controller
 
     public function formBeforeSave($model)
     {
-        $model->is_custom = true;
+        $model->is_custom = 1;
     }
 
     public function onTest($recordId)
     {
         try {
             $model = $this->formFindModelObject($recordId);
-            $user = BackendAuth::getUser();
+            $user = $this->user;
 
-            $vars = [
-                'email' => $user->email,
-                'name'  => $user->full_name,
-            ];
-            Mail::send($model->code, [], function($message) use ($vars) {
-                extract($vars);
-                $message->to($email, $name);
-            });
+            Mail::sendTo([$user->email => $user->full_name], $model->code);
 
-            Flash::success('The test message has been successfully sent.');
+            Flash::success(trans('system::lang.mail_templates.test_success'));
         }
         catch (Exception $ex) {
             Flash::error($ex->getMessage());
         }
     }
-
 }

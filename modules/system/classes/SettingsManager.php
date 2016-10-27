@@ -58,7 +58,7 @@ class SettingsManager
     /**
      * @var array Settings item defaults.
      */
-    static $itemDefaults = [
+    protected static $itemDefaults = [
         'code'        => null,
         'label'       => null,
         'category'    => null,
@@ -99,8 +99,9 @@ class SettingsManager
 
         foreach ($plugins as $id => $plugin) {
             $items = $plugin->registerSettings();
-            if (!is_array($items))
+            if (!is_array($items)) {
                 continue;
+            }
 
             $this->registerSettingItems($id, $items);
         }
@@ -108,7 +109,7 @@ class SettingsManager
         /*
          * Sort settings items
          */
-        usort($this->items, function($a, $b) {
+        usort($this->items, function ($a, $b) {
             return $a->order - $b->order;
         });
 
@@ -122,11 +123,11 @@ class SettingsManager
          * Process each item in to a category array
          */
         $catItems = [];
-        foreach ($this->items as $item)
-        {
-            $category = $item->category ?: 'Misc';
-            if (!isset($catItems[$category]))
+        foreach ($this->items as $item) {
+            $category = $item->category ?: self::CATEGORY_MISC;
+            if (!isset($catItems[$category])) {
                 $catItems[$category] = [];
+            }
 
             $catItems[$category][] = $item;
         }
@@ -140,11 +141,13 @@ class SettingsManager
      */
     public function listItems($context = null)
     {
-        if ($this->items === null)
+        if ($this->items === null) {
             $this->loadItems();
+        }
 
-        if ($context !== null)
+        if ($context !== null) {
             return $this->filterByContext($this->items, $context);
+        }
 
         return $this->items;
     }
@@ -163,12 +166,14 @@ class SettingsManager
             $filteredCategory = [];
             foreach ($category as $item) {
                 $itemContext = is_array($item->context) ? $item->context : [$item->context];
-                if (in_array($context, $itemContext))
+                if (in_array($context, $itemContext)) {
                     $filteredCategory[] = $item;
+                }
             }
 
-            if (count($filteredCategory))
+            if (count($filteredCategory)) {
                 $filteredItems[$categoryName] = $filteredCategory;
+            }
         }
 
         return $filteredItems;
@@ -204,13 +209,14 @@ class SettingsManager
      *   The item will be displayed if the user has any of the specified permissions.
      * - order - a position of the item in the setting, optional.
      * - category - a string to assign this item to a category, optional.
-     * @param string $owner Specifies the setting items owner plugin or module in the format Vendor/Module.
+     * @param string $owner Specifies the setting items owner plugin or module in the format Vendor.Module.
      * @param array $definitions An array of the setting item definitions.
      */
     public function registerSettingItems($owner, array $definitions)
     {
-        if (!$this->items)
+        if (!$this->items) {
             $this->items = [];
+        }
 
         foreach ($definitions as $code => $definition) {
             $item = array_merge(self::$itemDefaults, array_merge($definition, [
@@ -229,8 +235,9 @@ class SettingsManager
                     $uri[] = strtolower($author);
                     $uri[] = strtolower($plugin);
                 }
-                else
+                else {
                     $uri[] = strtolower($owner);
+                }
 
                 $uri[] = strtolower($code);
                 $uri =  implode('/', $uri);
@@ -243,7 +250,7 @@ class SettingsManager
 
     /**
      * Sets the navigation context.
-     * @param string $owner Specifies the setting items owner plugin or module in the format Vendor/Module.
+     * @param string $owner Specifies the setting items owner plugin or module in the format Vendor.Module.
      * @param string $code Specifies the settings item code.
      */
     public static function setContext($owner, $code)
@@ -264,7 +271,7 @@ class SettingsManager
     {
         return (object)[
             'itemCode' => $this->contextItemCode,
-            'owner' => $this->contextOwner 
+            'owner' => $this->contextOwner
         ];
     }
 
@@ -276,15 +283,17 @@ class SettingsManager
      */
     public function findSettingItem($owner, $code)
     {
-        if ($this->allItems === null)
+        if ($this->allItems === null) {
             $this->loadItems();
+        }
 
         $owner = strtolower($owner);
         $code = strtolower($code);
 
         foreach ($this->allItems as $item) {
-            if (strtolower($item->owner) == $owner && strtolower($item->code) == $code)
+            if (strtolower($item->owner) == $owner && strtolower($item->code) == $code) {
                 return $item;
+            }
         }
 
         return false;
@@ -298,9 +307,10 @@ class SettingsManager
      */
     protected function filterItemPermissions($user, array $items)
     {
-        array_filter($items, function($item) use ($user) {
-            if (!$item->permissions || !count($item->permissions))
+        $items = array_filter($items, function ($item) use ($user) {
+            if (!$item->permissions || !count($item->permissions)) {
                 return true;
+            }
 
             return $user->hasAnyAccess($item->permissions);
         });

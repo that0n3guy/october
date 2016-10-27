@@ -3,6 +3,7 @@
     "description": "October CMS",
     "homepage": "http://octobercms.com",
     "keywords": ["october", "cms", "octobercms", "laravel"],
+    "license": "MIT",
     "authors": [
         {
             "name": "Alexey Bobkov",
@@ -23,29 +24,27 @@
         "source": "https://github.com/octobercms/october"
     },
     "require": {
-        "php": ">=5.4",
-        "laravel/framework": "4.2.*",
+        "php": ">=5.5.9",
+        "october/rain": "~1.0",
         "october/system": "~1.0",
         "october/backend": "~1.0",
         "october/cms": "~1.0",
-        "october/rain": "~1.0"
+        "laravel/framework": "5.1.*",
+        "wikimedia/composer-merge-plugin": "dev-master"
+    },
+    "require-dev": {
+        "fzaninotto/faker": "~1.4",
+        "phpunit/phpunit": "~4.0",
+        "phpunit/phpunit-selenium": "~1.2"
     },
     "autoload-dev": {
         "classmap": [
             "tests/TestCase.php",
-            "tests/UiTestCase.php"
+            "tests/UiTestCase.php",
+            "tests/PluginTestCase.php"
         ]
     },
-    "___scripts": {
-        "post-install-cmd": [
-            "php artisan optimize"
-        ],
-        "pre-update-cmd": [
-            "php artisan clear-compiled"
-        ],
-        "post-update-cmd": [
-            "php artisan optimize"
-        ],
+    "scripts": {
         "post-create-project-cmd": [
             "php artisan key:generate"
         ]
@@ -54,5 +53,15 @@
         "preferred-install": "dist"
     },
     "minimum-stability": "dev",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "extra": {
+        "merge-plugin": {
+            "include": [
+                "plugins/*/*/composer.json"
+            ],
+            "recurse": true,
+            "replace": false,
+            "merge-dev": false
+        }
+    }
 }

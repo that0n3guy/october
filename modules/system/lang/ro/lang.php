@@ -3,9 +3,11 @@
 return [
     'app' => [
         'name' => 'October CMS',
-        'motto' => 'Intoarcerea la elementele de baza',
+        'tagline' => 'Intoarcerea la elementele de baza',
     ],
     'locale' => [
+        'cs' => 'Czech',
+        'da' => 'Danish',
         'en' => 'Engleza',
         'nl' => 'Olandeza',
         'ja' => 'Japoneza',
@@ -16,12 +18,17 @@ return [
         'fr' => 'Franceza',
         'ro' => 'Romana',
         'pt-br' => 'Portugheza (Brazilia)',
+        'fa' => 'Persian',
+        'nb-no' => 'Norvegiană (Bokmål)'
     ],
     'directory' => [
         'create_fail' => "Nu se poate crea directorul: :name",
     ],
     'file' => [
         'create_fail' => "Nu se poate crea fisierul: :name",
+    ],
+    'combiner' => [
+        'not_found' => "Fisierul compus ':name' nu a fost gasit.",
     ],
     'system' => [
         'name' => 'Sistem',
@@ -145,18 +152,14 @@ return [
         'plugin_description' => 'Descriere',
         'plugin_version' => 'Versiune',
         'plugin_author' => 'Autor',
-        'core_build' => 'Versiune curenta',
-        'core_build_old' => 'Versiune curenta :build',
-        'core_build_new' => 'Versiune :build',
-        'core_build_new_help' => 'Ultima versiune este disponibila.',
+        'core_current_build' => 'Versiune curenta',
+        'core_build' => 'Versiune :build',
+        'core_build_help' => 'Ultima versiune este disponibila.',
         'core_downloading' => 'Se descarca fisierele aplicatiei',
         'core_extracting' => 'Se dezarhiveaza fisierele aplicatiei',
         'plugin_downloading' => 'Se descarca plugin-ul: :name',
         'plugin_extracting' => 'Se dezarhiveaza plugin-ul: :name',
         'plugin_version_none' => 'Plugin nou',
-        'plugin_version_old' => 'Versiune v:version',
-        'plugin_version_new' => 'v:version',
-        'theme_label' => 'Tema',
         'theme_new_install' => 'Instalare tema noua.',
         'theme_downloading' => 'Se descarca tema: :name',
         'theme_extracting' => 'Se dezarhiveaza tema: :name',

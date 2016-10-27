@@ -1,6 +1,7 @@
 <?php namespace October\Demo\Components;
 
 use Cms\Classes\ComponentBase;
+use ApplicationException;
 
 class Todo extends ComponentBase
 {
@@ -31,13 +32,14 @@ class Todo extends ComponentBase
     {
         $items = post('items', []);
 
-        if (count($items) >= $this->property('max'))
-            throw new \Exception(sprintf('Sorry only %s items are allowed.', $this->property('max')));
+        if (count($items) >= $this->property('max')) {
+            throw new ApplicationException(sprintf('Sorry only %s items are allowed.', $this->property('max')));
+        }
 
-        if (($newItem = post('newItem')) != '')
+        if (($newItem = post('newItem')) != '') {
             $items[] = $newItem;
+        }
 
         $this->page['items'] = $items;
     }
-
 }

@@ -1,8 +1,12 @@
 <?php namespace Backend\FormWidgets;
 
+use Db;
 use Lang;
+use Backend\Classes\FormField;
 use Backend\Classes\FormWidgetBase;
-use System\Classes\SystemException;
+use ApplicationException;
+use SystemException;
+use Illuminate\Database\Eloquent\Relations\Relation as RelationBase;
 
 /**
  * Form Relationship
@@ -13,20 +17,40 @@ use System\Classes\SystemException;
  */
 class Relation extends FormWidgetBase
 {
+    use \Backend\Traits\FormModelWidget;
+
+    //
+    // Configurable properties
+    //
+
+    /**
+     * @var string Model column to use for the name reference
+     */
+    public $nameFrom = 'name';
+
+    /**
+     * @var string Model column to use for the description reference
+     */
+    public $descriptionFrom = 'description';
+
+    /**
+     * @var string Custom SQL column selection to use for the name reference
+     */
+    public $sqlSelect;
+
+    /**
+     * @var string Empty value to use if the relation is singluar (belongsTo)
+     */
+    public $emptyOption;
+
+    //
+    // Object properties
+    //
+
     /**
      * {@inheritDoc}
      */
-    public $defaultAlias = 'relation';
-
-    /**
-     * @var string Relationship type
-     */
-    public $relationType;
-
-    /**
-     * @var string Relationship name
-     */
-    public $relationName;
+    protected $defaultAlias = 'relation';
 
     /**
      * @var FormField Object used for rendering a simple field type
@@ -34,34 +58,19 @@ class Relation extends FormWidgetBase
     public $renderFormField;
 
     /**
-     * @var string Model column to use for the name reference
-     */
-    public $nameColumn = 'name';
-
-    /**
-     * @var string Model column to use for the description reference
-     */
-    public $descriptionColumn = 'description';
-
-    /**
-     * @var string Empty value to use if the relation is singluar (belongsTo)
-     */
-    public $emptyOption;
-
-    /**
      * {@inheritDoc}
      */
     public function init()
     {
-        $this->relationName = $this->formField->columnName;
-        $this->relationType = $this->model->getRelationType($this->relationName);
+        $this->fillFromConfig([
+            'nameFrom',
+            'descriptionFrom',
+            'emptyOption',
+        ]);
 
-        $this->nameColumn = $this->getConfig('nameColumn', $this->nameColumn);
-        $this->descriptionColumn = $this->getConfig('descriptionColumn', $this->descriptionColumn);
-        $this->emptyOption = $this->getConfig('emptyOption');
-
-        if (!$this->model->hasRelation($this->relationName))
-            throw new SystemException(Lang::get('backend::lang.model.missing_relation', ['class'=>get_class($this->controller), 'relation'=>$this->relationName]));
+        if (isset($this->config->select)) {
+            $this->sqlSelect = $this->config->select;
+        }
     }
 
     /**
@@ -86,42 +95,76 @@ class Relation extends FormWidgetBase
      */
     protected function makeRenderFormField()
     {
-        $field = clone $this->formField;
-        $relatedObj = $this->model->makeRelation($this->relationName);
-        $query = $relatedObj->newQuery();
+        return $this->renderFormField = RelationBase::noConstraints(function () {
 
-        if (in_array($this->relationType, ['belongsToMany', 'morphToMany', 'morphedByMany'])) {
-            $field->type = 'checkboxlist';
-        }
-        else if ($this->relationType == 'belongsTo') {
-            $field->type = 'dropdown';
+            $field = clone $this->formField;
+            $relationObject = $this->getRelationObject();
+            $query = $relationObject->newQuery();
+
+            list($model, $attribute) = $this->resolveModelAttribute($this->valueFrom);
+            $relationType = $model->getRelationType($attribute);
+            $relationModel = $model->makeRelation($attribute);
+
+            if (in_array($relationType, ['belongsToMany', 'morphToMany', 'morphedByMany', 'hasMany'])) {
+                $field->type = 'checkboxlist';
+            }
+            elseif (in_array($relationType, ['belongsTo', 'hasOne'])) {
+                $field->type = 'dropdown';
+            }
+
             $field->placeholder = $this->emptyOption;
-        }
 
-        // It is safe to assume that if the model and related model are of 
-        // the exact same class, then it cannot be related to itself
-        if ($this->model->exists && (get_class($this->model) == get_class($relatedObj))) {
-            $query->where($relatedObj->getKeyName(), '<>', $this->model->id);
-        }
+            // It is safe to assume that if the model and related model are of
+            // the exact same class, then it cannot be related to itself
+            if ($model->exists && (get_class($model) == get_class($relationModel))) {
+                $query->where($relationModel->getKeyName(), '<>', $model->getKey());
+            }
 
-        if (in_array('October\Rain\Database\Traits\NestedTree', class_uses($relatedObj)))
-            $field->options = $query->listsNested($this->nameColumn, $relatedObj->getKeyName());
-        else
-            $field->options = $query->lists($this->nameColumn, $relatedObj->getKeyName());
+            // Even though "no constraints" is applied, belongsToMany constrains the query
+            // by joining its pivot table. Remove all joins from the query.
+            $query->getQuery()->getQuery()->joins = [];
 
-        return $this->renderFormField = $field;
+            // Determine if the model uses a tree trait
+            $treeTraits = ['October\Rain\Database\Traits\NestedTree', 'October\Rain\Database\Traits\SimpleTree'];
+            $usesTree = count(array_intersect($treeTraits, class_uses($relationModel))) > 0;
+
+            // The "sqlSelect" config takes precedence over "nameFrom".
+            // A virtual column called "selection" will contain the result.
+            // Tree models must select all columns to return parent columns, etc.
+            if ($this->sqlSelect) {
+                $nameFrom = 'selection';
+                $selectColumn = $usesTree ? '*' : $relationModel->getKeyName();
+                $result = $query->select($selectColumn, Db::raw($this->sqlSelect . ' AS ' . $nameFrom));
+            }
+            else {
+                $nameFrom = $this->nameFrom;
+                $result = $query->getQuery()->get();
+            }
+
+            $field->options = $usesTree
+                ? $result->listsNested($nameFrom, $relationModel->getKeyName())
+                : $result->lists($nameFrom, $relationModel->getKeyName());
+
+            return $field;
+        });
     }
 
     /**
      * {@inheritDoc}
      */
-    public function getSaveData($value)
+    public function getSaveValue($value)
     {
-        if (is_string($value) && !strlen($value))
-            return null;
+        if ($this->formField->disabled || $this->formField->hidden) {
+            return FormField::NO_SAVE_DATA;
+        }
 
-        if (is_array($value) && !count($value))
+        if (is_string($value) && !strlen($value)) {
             return null;
+        }
+
+        if (is_array($value) && !count($value)) {
+            return null;
+        }
 
         return $value;
     }

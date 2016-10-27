@@ -1,19 +1,22 @@
 <?php
 
-/*
+/**
  * Register CMS routes before all user routes.
  */
-App::before(function($request) {
-
+App::before(function ($request) {
     /*
-     * Combine JavaScript and StyleSheet assets
+     * Extensibility
      */
-    Route::any('combine/{file}', 'Cms\Classes\Controller@combine');
+    Event::fire('cms.beforeRoute');
 
     /*
-     * The CMS module intercepts all URLs that were not 
+     * The CMS module intercepts all URLs that were not
      * handled by the back-end modules.
      */
-    Route::any('{slug}', 'Cms\Classes\Controller@run')->where('slug', '(.*)?');
+    Route::any('{slug}', 'Cms\Classes\CmsController@run')->where('slug', '(.*)?');
 
+    /*
+     * Extensibility
+     */
+    Event::fire('cms.route');
 });

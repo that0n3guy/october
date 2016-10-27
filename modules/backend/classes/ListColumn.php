@@ -1,5 +1,7 @@
 <?php namespace Backend\Classes;
 
+use October\Rain\Html\Helper as HtmlHelper;
+
 /**
  * List Columns definition
  * A translation of the list column configuration
@@ -9,7 +11,6 @@
  */
 class ListColumn
 {
-
     /**
      * @var string List column name.
      */
@@ -41,10 +42,20 @@ class ListColumn
     public $sortable = true;
 
     /**
+     * @var bool If set to false, disables the default click behavior when the column is clicked.
+     */
+    public $clickable = true;
+
+    /**
      * @var string Model attribute to use for the display value, this will
      * override any $sqlSelect definition.
      */
-    public $nameFrom;
+    public $valueFrom;
+
+    /**
+     * @var string Specifies a default value when value is empty.
+     */
+    public $defaults;
 
     /**
      * @var string Custom SQL for selecting this record display value,
@@ -56,6 +67,13 @@ class ListColumn
      * @var string Relation name, if this column represents a model relationship.
      */
     public $relation;
+
+    /**
+     * @var string sets the column width, can be specified in percents (10%) or pixels (50px).
+     * There could be a single column without width specified, it will be stretched to take the
+     * available space.
+     */
+    public $width;
 
     /**
      * @var string Specify a CSS class to attach to the list cell element.
@@ -78,7 +96,9 @@ class ListColumn
     public $config;
 
     /**
-     * Constructor
+     * Constructor.
+     * @param string $columnName
+     * @param string $label
      */
     public function __construct($columnName, $label)
     {
@@ -106,17 +126,70 @@ class ListColumn
      */
     protected function evalConfig($config)
     {
-        if (isset($config['cssClass'])) $this->cssClass = $config['cssClass'];
-        if (isset($config['searchable'])) $this->searchable = $config['searchable'];
-        if (isset($config['sortable'])) $this->sortable = $config['sortable'];
-        if (isset($config['invisible'])) $this->invisible = $config['invisible'];
-        if (isset($config['nameFrom'])) $this->nameFrom = $config['nameFrom'];
-        if (isset($config['select'])) $this->sqlSelect = $config['select'];
-        if (isset($config['relation'])) $this->relation = $config['relation'];
-        if (isset($config['format'])) $this->format = $config['format'];
-        if (isset($config['path'])) $this->path = $config['path'];
+        if (isset($config['width'])) {
+            $this->width = $config['width'];
+        }
+        if (isset($config['cssClass'])) {
+            $this->cssClass = $config['cssClass'];
+        }
+        if (isset($config['searchable'])) {
+            $this->searchable = $config['searchable'];
+        }
+        if (isset($config['sortable'])) {
+            $this->sortable = $config['sortable'];
+        }
+        if (isset($config['clickable'])) {
+            $this->clickable = $config['clickable'];
+        }
+        if (isset($config['invisible'])) {
+            $this->invisible = $config['invisible'];
+        }
+        if (isset($config['valueFrom'])) {
+            $this->valueFrom = $config['valueFrom'];
+        }
+        if (isset($config['default'])) {
+            $this->defaults = $config['default'];
+        }
+        if (isset($config['select'])) {
+            $this->sqlSelect = $config['select'];
+        }
+        if (isset($config['relation'])) {
+            $this->relation = $config['relation'];
+        }
+        if (isset($config['format'])) {
+            $this->format = $config['format'];
+        }
+        if (isset($config['path'])) {
+            $this->path = $config['path'];
+        }
 
         return $config;
     }
 
+    /**
+     * Returns a HTML valid name for the column name.
+     * @return string
+     */
+    public function getName()
+    {
+        return HtmlHelper::nameToId($this->columnName);
+    }
+
+    /**
+     * Returns a value suitable for the column id property.
+     * @param  string $suffix Specify a suffix string
+     * @return string
+     */
+    public function getId($suffix = null)
+    {
+        $id = 'column';
+
+        $id .= '-'.$this->columnName;
+
+        if ($suffix) {
+            $id .= '-'.$suffix;
+        }
+
+        return HtmlHelper::nameToId($id);
+    }
 }

@@ -5,7 +5,7 @@ use Twig_Extension;
 use Twig_TokenParser;
 use Twig_SimpleFilter;
 use Twig_SimpleFunction;
-use System\Classes\ApplicationException;
+use ApplicationException;
 use System\Classes\MarkupManager;
 
 /**
@@ -102,5 +102,4 @@ class Extension extends Twig_Extension
     {
         return URL::to($url);
     }
-
 }

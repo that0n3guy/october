@@ -5,6 +5,12 @@ use Model;
 use Config;
 use System\Classes\PluginManager;
 
+/**
+ * Stores information about current plugin versions.
+ *
+ * @package october\system
+ * @author Alexey Bobkov, Samuel Georges
+ */
 class PluginVersion extends Model
 {
     use \October\Rain\Database\Traits\Purgeable;
@@ -19,7 +25,7 @@ class PluginVersion extends Model
     /**
      * @var array List of attribute names which should not be saved to the database.
      */
-    protected $purgeable = ['name', 'description', 'orphaned', 'author', 'icon'];
+    protected $purgeable = ['name', 'description', 'orphaned', 'author', 'icon', 'homepage'];
 
     public $timestamps = false;
 
@@ -30,6 +36,12 @@ class PluginVersion extends Model
     public $disabledByConfig = false;
 
     public $orphaned = false;
+
+    /**
+     * The accessors to append to the model's array form.
+     * @var array
+     */
+    protected $appends = ['slug'];
 
     /**
      * After the model is populated
@@ -43,17 +55,18 @@ class PluginVersion extends Model
         $manager = PluginManager::instance();
         $pluginObj = $manager->findByIdentifier($this->code);
 
-
         if ($pluginObj) {
             $pluginInfo = $pluginObj->pluginDetails();
             foreach ($pluginInfo as $attribute => $info) {
                 $this->{$attribute} = Lang::get($info);
             }
 
-            if ($this->is_disabled)
+            if ($this->is_disabled) {
                 $manager->disablePlugin($this->code, true);
-            else
+            }
+            else {
                 $manager->enablePlugin($this->code, true);
+            }
 
             $this->disabledBySystem = $pluginObj->disabled;
 
@@ -66,7 +79,25 @@ class PluginVersion extends Model
             $this->description = Lang::get('system::lang.plugins.unknown_plugin');
             $this->orphaned = true;
         }
+    }
 
+    /**
+     * Returns true if the plugin should be updated by the system.
+     * @return bool
+     */
+    public function getIsUpdatableAttribute()
+    {
+        return !$this->is_disabled && !$this->disabledBySystem && !$this->disabledByConfig;
+    }
+
+    /**
+     * Only include enabled plugins
+     * @param $query
+     * @return mixed
+     */
+    public function scopeApplyEnabled($query)
+    {
+        return $query->where('is_disabled', '!=', 1);
     }
 
     /**
@@ -85,4 +116,19 @@ class PluginVersion extends Model
             : null;
     }
 
+    /**
+     * Provides the slug attribute.
+     */
+    public function getSlugAttribute()
+    {
+        return self::makeSlug($this->code);
+    }
+
+    /**
+     * Generates a slug for the plugin.
+     */
+    public static function makeSlug($code)
+    {
+        return strtolower(str_replace('.', '-', $code));
+    }
 }

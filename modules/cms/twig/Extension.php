@@ -3,13 +3,14 @@
 use URL;
 use Flash;
 use Block;
+use Event;
 use Twig_Extension;
 use Twig_TokenParser;
 use Twig_SimpleFilter;
 use Twig_SimpleFunction;
 use Cms\Classes\Controller;
 use Cms\Classes\CmsException;
-use System\Classes\ApplicationException;
+use ApplicationException;
 
 /**
  * The CMS Twig extension class implements the basic CMS Twig functions and filters.
@@ -28,7 +29,7 @@ class Extension extends Twig_Extension
      * Creates the extension instance.
      * @param \Cms\Classes\Controller $controller The CMS controller object.
      */
-    public function __construct(Controller $controller)
+    public function __construct(Controller $controller = null)
     {
         $this->controller = $controller;
     }
@@ -69,6 +70,7 @@ class Extension extends Twig_Extension
         return [
             new Twig_SimpleFilter('page', [$this, 'pageFilter'], ['is_safe' => ['html']]),
             new Twig_SimpleFilter('theme', [$this, 'themeFilter'], ['is_safe' => ['html']]),
+            new Twig_SimpleFilter('media', [$this, 'mediaFilter'], ['is_safe' => ['html']]),
         ];
     }
 
@@ -117,11 +119,13 @@ class Extension extends Twig_Extension
 
     /**
      * Renders a content file.
+     * @param string $name Specifies the content block name.
+     * @param array $parameters A optional list of parameters to pass to the content.
      * @return string Returns the file contents.
      */
-    public function contentFunction($name)
+    public function contentFunction($name, $parameters = [])
     {
-        return $this->controller->renderContent($name);
+        return $this->controller->renderContent($name, $parameters);
     }
 
     /**
@@ -151,11 +155,25 @@ class Extension extends Twig_Extension
      */
     public function placeholderFunction($name, $default = null)
     {
-        if (($result = Block::get($name)) === null)
+        if (($result = Block::get($name)) === null) {
             return null;
+        }
 
         $result = str_replace('<!-- X_OCTOBER_DEFAULT_BLOCK_CONTENT -->', trim($default), $result);
         return $result;
+    }
+
+    /**
+     * Looks up the URL for a supplied page and returns it relative to the website root.
+     * @param mixed $name Specifies the Cms Page file name.
+     * @param array $parameters Route parameters to consider in the URL.
+     * @param bool $routePersistence By default the existing routing parameters will be included
+     * when creating the URL, set to false to disable this feature.
+     * @return string
+     */
+    public function pageFilter($name, $parameters = [], $routePersistence = true)
+    {
+        return $this->controller->pageUrl($name, $parameters, $routePersistence);
     }
 
     /**
@@ -170,16 +188,13 @@ class Extension extends Twig_Extension
     }
 
     /**
-     * Looks up the URL for a supplied page and returns it relative to the website root.
-     * @param mixed $name Specifies the Cms Page file name.
-     * @param array $parameters Route parameters to consider in the URL.
-     * @param bool $routePersistence By default the existing routing parameters will be included
-     * when creating the URL, set to false to disable this feature.
+     * Converts supplied file to a URL relative to the media library.
+     * @param string $file Specifies the media-relative file
      * @return string
      */
-    public function pageFilter($name, $parameters = [], $routePersistence = true)
+    public function mediaFilter($file)
     {
-        return $this->controller->pageUrl($name, $parameters, $routePersistence);
+        return $this->controller->mediaUrl($file);
     }
 
     /**
@@ -199,8 +214,12 @@ class Extension extends Twig_Extension
      */
     public function displayBlock($name, $default = null)
     {
-        if (($result = Block::placeholder($name)) === null)
-            return null;
+        if (($result = Block::placeholder($name)) === null) {
+            return $default;
+        }
+
+        if ($event = Event::fire('cms.block.render', [$name, $result], true))
+            $result = $event;
 
         $result = str_replace('<!-- X_OCTOBER_DEFAULT_BLOCK_CONTENT -->', trim($default), $result);
         return $result;

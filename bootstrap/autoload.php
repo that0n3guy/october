@@ -4,6 +4,26 @@ define('LARAVEL_START', microtime(true));
 
 /*
 |--------------------------------------------------------------------------
+| Register Core Helpers
+|--------------------------------------------------------------------------
+|
+| We cannot rely on Composer's load order when calculating the weight of
+| each package. This line ensures that the core global helpers are
+| always given priority one status.
+|
+*/
+
+$helperPath = __DIR__.'/../vendor/october/rain/src/Support/helpers.php';
+
+if (!file_exists($helperPath)) {
+    echo 'Missing vendor files, try running "composer install" or use the Wizard installer.'.PHP_EOL;
+    exit(1);
+}
+
+require $helperPath;
+
+/*
+|--------------------------------------------------------------------------
 | Register The Composer Auto Loader
 |--------------------------------------------------------------------------
 |
@@ -27,47 +47,8 @@ require __DIR__.'/../vendor/autoload.php';
 |
 */
 
-if (file_exists($compiled = __DIR__.'/compiled.php'))
-{
-	require $compiled;
+$compiledPath = __DIR__.'/../storage/framework/compiled.php';
+
+if (file_exists($compiledPath)) {
+    require $compiledPath;
 }
-
-/*
-|--------------------------------------------------------------------------
-| Setup Patchwork UTF-8 Handling
-|--------------------------------------------------------------------------
-|
-| The Patchwork library provides solid handling of UTF-8 strings as well
-| as provides replacements for all mb_* and iconv type functions that
-| are not available by default in PHP. We'll setup this stuff here.
-|
-*/
-
-Patchwork\Utf8\Bootup::initMbstring();
-
-/*
-|--------------------------------------------------------------------------
-| Register The October Auto Loader
-|--------------------------------------------------------------------------
-| This should come before the Laravel loader because it is more likely
-| to find a partner fo' life.
-|
-*/
-
-October\Rain\Support\ClassLoader::register();
-October\Rain\Support\ClassLoader::addDirectories(array(__DIR__.'/../modules', __DIR__.'/../plugins'));
-
-/*
-|--------------------------------------------------------------------------
-| Register The Laravel Auto Loader
-|--------------------------------------------------------------------------
-|
-| We register an auto-loader "behind" the Composer loader that can load
-| model classes on the fly, even if the autoload files have not been
-| regenerated for the application. We'll add it to the stack here.
-|
-*/
-
-Illuminate\Support\ClassLoader::register();
-
-

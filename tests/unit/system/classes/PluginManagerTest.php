@@ -7,7 +7,9 @@ class PluginManagerTest extends TestCase
 
     public function setUp()
     {
-        include_once base_path().'/tests/fixtures/system/plugins/october/test/Plugin.php';
+        parent::setUp();
+
+        include_once base_path().'/tests/fixtures/plugins/october/tester/Plugin.php';
     }
 
     //
@@ -50,29 +52,26 @@ class PluginManagerTest extends TestCase
         $manager = PluginManager::instance();
         $result = self::callProtectedMethod($manager, 'loadPlugins');
 
-        $this->assertCount(4, $result);
+        $this->assertCount(5, $result);
         $this->assertArrayHasKey('October.NoUpdates', $result);
         $this->assertArrayHasKey('October.Sample', $result);
-        $this->assertArrayHasKey('October.Test', $result);
+        $this->assertArrayHasKey('October.Tester', $result);
+        $this->assertArrayHasKey('Database.Tester', $result);
         $this->assertArrayHasKey('TestVendor.Test', $result);
 
         $this->assertInstanceOf('October\NoUpdates\Plugin', $result['October.NoUpdates']);
         $this->assertInstanceOf('October\Sample\Plugin', $result['October.Sample']);
-        $this->assertInstanceOf('October\Test\Plugin', $result['October.Test']);
+        $this->assertInstanceOf('October\Tester\Plugin', $result['October.Tester']);
+        $this->assertInstanceOf('Database\Tester\Plugin', $result['Database.Tester']);
         $this->assertInstanceOf('TestVendor\Test\Plugin', $result['TestVendor.Test']);
-    }
-
-    public function testGetPath()
-    {
-        $manager = PluginManager::instance();
-        $this->assertEquals(base_path().'/tests/fixtures/system/plugins', $manager->getPath());
     }
 
     public function testGetPluginPath()
     {
         $manager = PluginManager::instance();
-        $result = $manager->getPluginPath('October\Test');
-        $this->assertEquals(base_path() . '/tests/fixtures/system/plugins/october/test', $result);
+        $result = $manager->getPluginPath('October\Tester');
+        $basePath = str_replace('\\', '/', base_path());
+        $this->assertEquals($basePath . '/tests/fixtures/plugins/october/tester', $result);
     }
 
     public function testGetPlugins()
@@ -80,29 +79,31 @@ class PluginManagerTest extends TestCase
         $manager = PluginManager::instance();
         $result = $manager->getPlugins();
 
-        $this->assertCount(4, $result);
+        $this->assertCount(5, $result);
         $this->assertArrayHasKey('October.NoUpdates', $result);
         $this->assertArrayHasKey('October.Sample', $result);
-        $this->assertArrayHasKey('October.Test', $result);
+        $this->assertArrayHasKey('October.Tester', $result);
+        $this->assertArrayHasKey('Database.Tester', $result);
         $this->assertArrayHasKey('TestVendor.Test', $result);
 
         $this->assertInstanceOf('October\NoUpdates\Plugin', $result['October.NoUpdates']);
         $this->assertInstanceOf('October\Sample\Plugin', $result['October.Sample']);
-        $this->assertInstanceOf('October\Test\Plugin', $result['October.Test']);
+        $this->assertInstanceOf('October\Tester\Plugin', $result['October.Tester']);
+        $this->assertInstanceOf('Database\Tester\Plugin', $result['Database.Tester']);
         $this->assertInstanceOf('TestVendor\Test\Plugin', $result['TestVendor.Test']);
     }
 
     public function testFindByNamespace()
     {
         $manager = PluginManager::instance();
-        $result = $manager->findByNamespace('October\Test');
-        $this->assertInstanceOf('October\Test\Plugin', $result);
+        $result = $manager->findByNamespace('October\Tester');
+        $this->assertInstanceOf('October\Tester\Plugin', $result);
     }
 
     public function testHasPlugin()
     {
         $manager = PluginManager::instance();
-        $result = $manager->hasPlugin('October\Test');
+        $result = $manager->hasPlugin('October\Tester');
         $this->assertTrue($result);
 
         $result = $manager->hasPlugin('October\XXXXX');
@@ -114,10 +115,11 @@ class PluginManagerTest extends TestCase
         $manager = PluginManager::instance();
         $result = $manager->getPluginNamespaces();
 
-        $this->assertCount(4, $result);
+        $this->assertCount(5, $result);
         $this->assertArrayHasKey('\october\noupdates', $result);
         $this->assertArrayHasKey('\october\sample', $result);
-        $this->assertArrayHasKey('\october\test', $result);
+        $this->assertArrayHasKey('\october\tester', $result);
+        $this->assertArrayHasKey('\database\tester', $result);
         $this->assertArrayHasKey('\testvendor\test', $result);
     }
     
@@ -127,8 +129,9 @@ class PluginManagerTest extends TestCase
         $vendors = $manager->getVendorAndPluginNames();
 
         $this->assertArrayHasKey('october', $vendors);
+        $this->assertArrayHasKey('database', $vendors);
         $this->assertArrayHasKey('testvendor', $vendors);
-        $this->assertCount(2, $vendors);
+        $this->assertCount(3, $vendors);
     }
 
     public function testPluginDetails()
@@ -137,7 +140,7 @@ class PluginManagerTest extends TestCase
         $testPlugin = $manager->findByNamespace('October\XXXXX');
         $this->assertNull($testPlugin);
 
-        $testPlugin = $manager->findByNamespace('October\Test');
+        $testPlugin = $manager->findByNamespace('October\Tester');
         $this->assertNotNull($testPlugin);
         $pluginDetails = $testPlugin->pluginDetails();
 

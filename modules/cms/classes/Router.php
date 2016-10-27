@@ -5,7 +5,7 @@ use File;
 use Cache;
 use Config;
 use Event;
-use System\Classes\SystemException;
+use SystemException;
 use October\Rain\Router\Router as RainRouter;
 use October\Rain\Router\Helper as RouterHelper;
 
@@ -18,7 +18,8 @@ use October\Rain\Router\Helper as RouterHelper;
  * add the question mark after its name:
  * <pre>/blog/post/:post_id?</pre>
  * By default parameters in the middle of the URL are required, for example:
- * <pre>/blog/:post_id?/comments - although the :post_id parameter is marked as optional, it will be processed as required.</pre>
+ * <pre>/blog/:post_id?/comments - although the :post_id parameter is marked as optional,
+ * it will be processed as required.</pre>
  * Optional parameters can have default values which are used as fallback values in case if the real
  * parameter value is not presented in the URL. Default values cannot contain the pipe symbols and question marks. 
  * Specify the default value after the question mark:
@@ -41,6 +42,11 @@ class Router
     protected $theme;
 
     /**
+     * @var string The last URL to be looked up using findByUrl().
+     */
+    protected $url;
+
+    /**
      * @var array A list of parameters names and values extracted from the URL pattern and URL string.
      */
     protected $parameters = [];
@@ -48,12 +54,12 @@ class Router
     /**
      * @var array Contains the URL map - the list of page file names and corresponding URL patterns.
      */
-    private static $urlMap = [];
+    protected $urlMap = [];
 
     /**
      * October\Rain\Router\Router Router object with routes preloaded.
      */
-    private static $routerObj;
+    protected $routerObj;
 
     /**
      * Creates the router instance.
@@ -71,39 +77,51 @@ class Router
      */
     public function findByUrl($url)
     {
+        $this->url = $url;
         $url = RouterHelper::normalizeUrl($url);
 
-        $apiResult = Event::fire('cms.router.beforeRoute', [$url], true);
-        if ($apiResult !== null)
+        $apiResult = Event::fire('cms.router.beforeRoute', [$url, $this], true);
+        if ($apiResult !== null) {
             return $apiResult;
+        }
 
         for ($pass = 1; $pass <= 2; $pass++) {
             $fileName = null;
             $urlList = [];
 
-            $cacheable = Config::get('cms.enableRoutesCache') && in_array(Config::get('cache.driver'), ['apc', 'memcached', 'redis', 'array']);
-            if ($cacheable)
+            $cacheable = Config::get('cms.enableRoutesCache');
+            if ($cacheable) {
                 $fileName = $this->getCachedUrlFileName($url, $urlList);
+                if (is_array($fileName)) {
+                    list($fileName, $this->parameters) = $fileName;
+                }
+            }
 
             /*
              * Find the page by URL and cache the route
              */
             if (!$fileName) {
                 $router = $this->getRouterObject();
-
                 if ($router->match($url)) {
                     $this->parameters = $router->getParameters();
 
                     $fileName = $router->matchedRoute();
 
                     if ($cacheable) {
-                        if (!$urlList || !is_array($urlList))
+                        if (!$urlList || !is_array($urlList)) {
                             $urlList = [];
+                        }
 
-                        $urlList[$url] = $fileName;
+                        $urlList[$url] = !empty($this->parameters)
+                            ? [$fileName, $this->parameters]
+                            : $fileName;
 
                         $key = $this->getUrlListCacheKey();
-                        Cache::put($key, serialize($urlList), Config::get('cms.urlCacheTtl', 1));
+                        Cache::put(
+                            $key,
+                            base64_encode(serialize($urlList)),
+                            Config::get('cms.urlCacheTtl', 1)
+                        );
                     }
                 }
             }
@@ -141,8 +159,9 @@ class Router
      */
     public function findByFile($fileName, $parameters = [])
     {
-        if (!strlen(File::extension($fileName)))
+        if (!strlen(File::extension($fileName))) {
             $fileName .= '.htm';
+        }
 
         $router = $this->getRouterObject();
         return $router->url($fileName, $parameters);
@@ -154,8 +173,9 @@ class Router
      */
     protected function getRouterObject()
     {
-        if (self::$routerObj !== null)
-            return self::$routerObj;
+        if ($this->routerObj !== null) {
+            return $this->routerObj;
+        }
 
         /*
          * Load up each route rule
@@ -170,7 +190,7 @@ class Router
          */
         $router->sortRules();
 
-        return self::$routerObj = $router;
+        return $this->routerObj = $router;
     }
 
     /**
@@ -179,10 +199,11 @@ class Router
      */
     protected function getUrlMap()
     {
-        if (!count(self::$urlMap))
+        if (!count($this->urlMap)) {
             $this->loadUrlMap();
+        }
 
-        return self::$urlMap;
+        return $this->urlMap;
     }
 
     /**
@@ -197,32 +218,36 @@ class Router
         $key = $this->getCacheKey('page-url-map');
 
         $cacheable = Config::get('cms.enableRoutesCache');
-        if ($cacheable)
+        if ($cacheable) {
             $cached = Cache::get($key, false);
-        else
+        }
+        else {
             $cached = false;
+        }
 
-        if (!$cached || ($unserialized = @unserialize($cached)) === false) {
+        if (!$cached || ($unserialized = @unserialize(@base64_decode($cached))) === false) {
             /*
              * The item doesn't exist in the cache, create the map
              */
             $pages = $this->theme->listPages();
             $map = [];
             foreach ($pages as $page) {
-                if (!$page->url)
+                if (!$page->url) {
                     continue;
+                }
 
                 $map[] = ['file' => $page->getFileName(), 'pattern' => $page->url];
             }
 
-            self::$urlMap = $map;
-            if ($cacheable)
-                Cache::put($key, serialize($map), Config::get('cms.urlCacheTtl', 1));
+            $this->urlMap = $map;
+            if ($cacheable) {
+                Cache::put($key, base64_encode(serialize($map)), Config::get('cms.urlCacheTtl', 1));
+            }
 
             return false;
         }
 
-        self::$urlMap = $unserialized;
+        $this->urlMap = $unserialized;
         return true;
     }
 
@@ -255,13 +280,23 @@ class Router
     }
 
     /**
+     * Returns the last URL to be looked up.
+     * @return string
+     */
+    public function getUrl()
+    {
+        return $this->url;
+    }
+
+    /**
      * Returns a routing parameter.
      * @return array
      */
     public function getParameter($name, $default = null)
     {
-        if (isset($this->parameters[$name]) && !empty($this->parameters[$name]))
+        if (isset($this->parameters[$name]) && !empty($this->parameters[$name])) {
             return $this->parameters[$name];
+        }
 
         return $default;
     }
@@ -296,9 +331,14 @@ class Router
         $key = $this->getUrlListCacheKey();
         $urlList = Cache::get($key, false);
 
-        if ($urlList && ($urlList = @unserialize($urlList)) && is_array($urlList)) {
-            if (array_key_exists($url, $urlList))
+        if (
+            $urlList &&
+            ($urlList = @unserialize(@base64_decode($urlList))) &&
+            is_array($urlList)
+        ) {
+            if (array_key_exists($url, $urlList)) {
                 return $urlList[$url];
+            }
         }
 
         return null;

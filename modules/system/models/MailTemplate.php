@@ -2,11 +2,19 @@
 
 use App;
 use File;
+use Twig;
 use View;
 use Model;
 use October\Rain\Mail\MailParser;
 use System\Classes\PluginManager;
+use System\Helpers\View as ViewHelper;
 
+/**
+ * Mail template
+ *
+ * @package october\system
+ * @author Alexey Bobkov, Samuel Georges
+ */
 class MailTemplate extends Model
 {
     use \October\Rain\Database\Traits\Validation;
@@ -39,6 +47,23 @@ class MailTemplate extends Model
 
     protected static $registeredTemplates;
 
+    /**
+     * Returns an array of template codes and descriptions.
+     * @return array
+     */
+    public static function listAllTemplates()
+    {
+        $fileTemplates = (array) self::make()->listRegisteredTemplates();
+        $dbTemplates = (array) self::lists('description', 'code');
+        $templates = $fileTemplates + $dbTemplates;
+        ksort($templates);
+        return $templates;
+    }
+
+    /**
+     * Syncronise all file templates to the database.
+     * @return void
+     */
     public static function syncAll()
     {
         $templates = self::make()->listRegisteredTemplates();
@@ -49,19 +74,18 @@ class MailTemplate extends Model
          * Clean up non-customized templates
          */
         foreach ($dbTemplates as $code => $is_custom) {
-            if ($is_custom)
+            if ($is_custom) {
                 continue;
+            }
 
-            if (!array_key_exists($code, $templates))
+            if (!array_key_exists($code, $templates)) {
                 self::whereCode($code)->delete();
+            }
         }
 
         /*
          * Create new templates
          */
-        if (count($newTemplates))
-            $categories = MailLayout::lists('id', 'code');
-
         foreach ($newTemplates as $code => $description) {
             $sections = self::getTemplateSections($code);
             $layoutCode = array_get($sections, 'settings.layout', 'default');
@@ -69,8 +93,8 @@ class MailTemplate extends Model
             $template = self::make();
             $template->code = $code;
             $template->description = $description;
-            $template->is_custom = false;
-            $template->layout_id = isset($categories[$layoutCode]) ? $categories[$layoutCode] : null;
+            $template->is_custom = 0;
+            $template->layout_id = MailLayout::getIdFromCode($layoutCode);
             $template->forceSave();
         }
     }
@@ -78,11 +102,19 @@ class MailTemplate extends Model
     public function afterFetch()
     {
         if (!$this->is_custom) {
-            $sections = self::getTemplateSections($this->code);
-            $this->content_html = $sections['html'];
-            $this->content_text = $sections['text'];
-            $this->subject = array_get($sections, 'settings.subject', 'No subject');
+            $this->fillFromView();
         }
+    }
+
+    public function fillFromView()
+    {
+        $sections = self::getTemplateSections($this->code);
+        $this->content_html = $sections['html'];
+        $this->content_text = $sections['text'];
+        $this->subject = array_get($sections, 'settings.subject', 'No subject');
+
+        $layoutCode = array_get($sections, 'settings.layout', 'default');
+        $this->layout_id = MailLayout::getIdFromCode($layoutCode);
     }
 
     protected static function getTemplateSections($code)
@@ -90,32 +122,51 @@ class MailTemplate extends Model
         return MailParser::parse(File::get(View::make($code)->getPath()));
     }
 
+    public static function findOrMakeTemplate($code)
+    {
+        if (!$template = self::whereCode($code)->first()) {
+            $template = new self;
+            $template->code = $code;
+            $template->fillFromView();
+        }
+
+        return $template;
+    }
+
     public static function addContentToMailer($message, $code, $data)
     {
-        if (!isset(self::$cache[$code])) {
-            if (!$template = self::whereCode($code)->first())
-                return false;
-
-            self::$cache[$code] = $template;
-        }
-        else
+        if (isset(self::$cache[$code])) {
             $template = self::$cache[$code];
+        }
+        else {
+            self::$cache[$code] = $template = self::findOrMakeTemplate($code);
+        }
 
         /*
-         * Get Twig to load from a string
+         * Inject global view variables
          */
-        $twig = App::make('twig.string');
-        $message->subject($twig->render($template->subject, $data));
+        $globalVars = ViewHelper::getGlobalVars();
+        if (!empty($globalVars)) {
+            $data = (array) $data + $globalVars;
+        }
+
+        /*
+         * Subject
+         */
+        $customSubject = $message->getSwiftMessage()->getSubject();
+        if (empty($customSubject)) {
+            $message->subject(Twig::parse($template->subject, $data));
+        }
 
         /*
          * HTML contents
          */
-        $html = $twig->render($template->content_html, $data);
+        $html = Twig::parse($template->content_html, $data);
         if ($template->layout) {
-            $html = $twig->render($template->layout->content_html, [
-                'message' => $html,
+            $html = Twig::parse($template->layout->content_html, [
+                'content' => $html,
                 'css' => $template->layout->content_css
-            ]);
+            ] + (array) $data);
         }
 
         $message->setBody($html, 'text/html');
@@ -124,15 +175,15 @@ class MailTemplate extends Model
          * Text contents
          */
         if (strlen($template->content_text)) {
-            $text = $twig->render($template->content_text, $data);
+            $text = Twig::parse($template->content_text, $data);
             if ($template->layout) {
-                $text = $twig->render($template->layout->content_text, ['message' => $text]);
+                $text = Twig::parse($template->layout->content_text, [
+                    'content' => $text
+                ] + (array) $data);
             }
 
             $message->addPart($text, 'text/plain');
         }
-
-        return true;
     }
 
     //
@@ -152,8 +203,9 @@ class MailTemplate extends Model
         $plugins = PluginManager::instance()->getPlugins();
         foreach ($plugins as $pluginId => $pluginObj) {
             $templates = $pluginObj->registerMailTemplates();
-            if (!is_array($templates))
+            if (!is_array($templates)) {
                 continue;
+            }
 
             $this->registerMailTemplates($templates);
         }
@@ -165,8 +217,9 @@ class MailTemplate extends Model
      */
     public function listRegisteredTemplates()
     {
-        if (self::$registeredTemplates === null)
+        if (self::$registeredTemplates === null) {
             $this->loadRegisteredTemplates();
+        }
 
         return self::$registeredTemplates;
     }
@@ -193,8 +246,9 @@ class MailTemplate extends Model
      */
     public function registerMailTemplates(array $definitions)
     {
-        if (!static::$registeredTemplates)
+        if (!static::$registeredTemplates) {
             static::$registeredTemplates = [];
+        }
 
         static::$registeredTemplates = array_merge(static::$registeredTemplates, $definitions);
     }

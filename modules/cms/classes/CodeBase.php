@@ -45,19 +45,25 @@ class CodeBase extends Extendable implements ArrayAccess
      * This event is triggered when all components are initialized and before AJAX is handled.
      * The layout's onInit method triggers before the page's onInit method.
      */
-    public function onInit() {}
+    public function onInit()
+    {
+    }
 
     /**
      * This event is triggered in the beginning of the execution cycle.
      * The layout's onStart method triggers before the page's onStart method.
      */
-    public function onStart() {}
+    public function onStart()
+    {
+    }
 
     /**
      * This event is triggered in the end of the execution cycle, but before the page is displayed.
      * The layout's onEnd method triggers after the page's onEnd method.
      */
-    public function onEnd() {}
+    public function onEnd()
+    {
+    }
 
     /**
      * ArrayAccess implementation
@@ -99,8 +105,9 @@ class CodeBase extends Extendable implements ArrayAccess
      */
     public function __call($method, $parameters)
     {
-        if (method_exists($this, $method))
+        if ($this->methodExists($method)) {
             return call_user_func_array([$this, $method], $parameters);
+        }
 
         return call_user_func_array([$this->controller, $method], $parameters);
     }
@@ -115,17 +122,23 @@ class CodeBase extends Extendable implements ArrayAccess
      */
     public function __get($name)
     {
-        if (($value = $this->page->{$name}) !== null)
-            return $value;
-
-        if (array_key_exists($name, $this->controller->vars))
+        if (isset($this->page->components[$name]) || isset($this->layout->components[$name])) {
             return $this[$name];
+        }
+
+        if (($value = $this->page->{$name}) !== null) {
+            return $value;
+        }
+
+        if (array_key_exists($name, $this->controller->vars)) {
+            return $this[$name];
+        }
 
         return null;
     }
 
     /**
-     * As per __get, this will set a variable instead.
+     * This will set a property on the CMS Page object.
      * @param  string  $name
      * @param  mixed   $value
      * @return void
@@ -136,7 +149,7 @@ class CodeBase extends Extendable implements ArrayAccess
     }
 
     /**
-     * As per __get, this will check if a variable isset instead.
+     * This will check if a property isset on the CMS Page object.
      * @param  string  $name
      * @return void
      */

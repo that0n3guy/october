@@ -1,7 +1,6 @@
 <?php namespace Backend\Widgets;
 
-use Input;
-use October\Rain\Support\Util;
+use Lang;
 use Backend\Classes\WidgetBase;
 
 /**
@@ -13,15 +12,14 @@ use Backend\Classes\WidgetBase;
  */
 class Search extends WidgetBase
 {
-    /**
-     * {@inheritDoc}
-     */
-    public $defaultAlias = 'search';
+    //
+    // Configurable properties
+    //
 
     /**
      * @var string Search placeholder text.
      */
-    public $placeholder;
+    public $prompt;
 
     /**
      * @var bool Field show grow when selected.
@@ -29,14 +27,33 @@ class Search extends WidgetBase
     public $growable = true;
 
     /**
-     * @var string Active search term pulled from session data.
-     */
-    public $activeTerm;
-
-    /**
      * @var string Custom partial file definition, in context of the controller.
      */
-    public $customPartial;
+    public $partial;
+
+    /**
+     * @var string Defines the search mode. Commonly passed to the searchWhere() query.
+     */
+    public $mode;
+
+    /**
+     * @var string Custom scope method name. Commonly passed to the query.
+     */
+    public $scope;
+
+    //
+    // Object properties
+    //
+
+    /**
+     * {@inheritDoc}
+     */
+    protected $defaultAlias = 'search';
+
+    /**
+     * @var string Active search term pulled from session data.
+     */
+    protected $activeTerm;
 
     /**
      * @var array List of CSS classes to apply to the list container element.
@@ -44,31 +61,26 @@ class Search extends WidgetBase
     public $cssClasses = [];
 
     /**
-     * Constructor.
+     * Initialize the widget, called by the constructor and free from its parameters.
      */
-    public function __construct($controller, $configuration = [])
+    public function init()
     {
-        parent::__construct($controller, $configuration);
-
-        /*
-         * Process configuration
-         */
-        if (isset($this->config->prompt))
-            $this->placeholder = trans($this->config->prompt);
-
-        if (isset($this->config->partial))
-            $this->customPartial = $this->config->partial;
-
-        if (isset($this->config->growable))
-            $this->growable = $this->config->growable;
+        $this->fillFromConfig([
+            'prompt',
+            'partial',
+            'growable',
+            'scope',
+            'mode',
+        ]);
 
         /*
          * Add CSS class styles
          */
         $this->cssClasses[] = 'icon search';
 
-        if ($this->growable)
+        if ($this->growable) {
             $this->cssClasses[] = 'growable';
+        }
     }
 
     /**
@@ -78,10 +90,12 @@ class Search extends WidgetBase
     {
         $this->prepareVars();
 
-        if ($this->customPartial)
-            return $this->controller->makePartial($this->customPartial);
-        else
+        if ($this->partial) {
+            return $this->controller->makePartial($this->partial);
+        }
+        else {
             return $this->makePartial('search');
+        }
     }
 
     /**
@@ -90,7 +104,7 @@ class Search extends WidgetBase
     public function prepareVars()
     {
         $this->vars['cssClasses'] = implode(' ', $this->cssClasses);
-        $this->vars['placeholder'] = $this->placeholder;
+        $this->vars['placeholder'] = Lang::get($this->prompt);
         $this->vars['value'] = $this->getActiveTerm();
     }
 
@@ -109,8 +123,9 @@ class Search extends WidgetBase
          */
         $params = func_get_args();
         $result = $this->fireEvent('search.submit', [$params]);
-        if ($result && is_array($result))
-            return Util::arrayMerge($result);
+        if ($result && is_array($result)) {
+            return call_user_func_array('array_merge', $result);
+        }
     }
 
     /**
@@ -126,10 +141,12 @@ class Search extends WidgetBase
      */
     public function setActiveTerm($term)
     {
-        if (strlen($term))
+        if (strlen($term)) {
             $this->putSession('term', $term);
-        else
+        }
+        else {
             $this->resetSession();
+        }
 
         $this->activeTerm = $term;
     }

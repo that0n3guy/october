@@ -1,6 +1,8 @@
 <?php namespace Backend\Classes;
 
-use Str;
+use Html;
+use October\Rain\Database\Model;
+use October\Rain\Html\Helper as HtmlHelper;
 
 /**
  * Form Field definition
@@ -12,9 +14,14 @@ use Str;
 class FormField
 {
     /**
-     * @var string Form field column name.
+     * @var int Value returned when the form field should not contribute any save data.
      */
-    public $columnName;
+    const NO_SAVE_DATA = -1;
+
+    /**
+     * @var string Form field name.
+     */
+    public $fieldName;
 
     /**
      * @var string If the field element names should be contained in an array.
@@ -36,6 +43,21 @@ class FormField
      * @var string Form field value.
      */
     public $value;
+
+    /**
+     * @var string Model attribute to use for the display value.
+     */
+    public $valueFrom;
+
+    /**
+     * @var string Specifies a default value for supported fields.
+     */
+    public $defaults;
+
+    /**
+     * @var string Model attribute to use for the default value.
+     */
+    public $defaultFrom;
 
     /**
      * @var string Specifies if this field belongs to a tab.
@@ -78,6 +100,11 @@ class FormField
     public $disabled = false;
 
     /**
+     * @var bool Specify if the field is hidden. Hiddens fields are not included in postbacks.
+     */
+    public $hidden = false;
+
+    /**
      * @var bool Specifies if this field stretch to fit the page height.
      */
     public $stretch = false;
@@ -86,7 +113,7 @@ class FormField
      * @var string Specifies a comment to accompany the field
      */
     public $comment;
-    
+
     /**
      * @var string Specifies the comment position.
      */
@@ -96,11 +123,6 @@ class FormField
      * @var string Specifies if the comment is in HTML format.
      */
     public $commentHtml = false;
-
-    /**
-     * @var string Specifies a default value for supported fields.
-     */
-    public $defaults;
 
     /**
      * @var string Specifies a message to display when there is no value supplied (placeholder).
@@ -130,11 +152,26 @@ class FormField
     /**
      * @var array Other field names this field depends on, when the other fields are modified, this field will update.
      */
-    public $depends;
+    public $dependsOn;
 
-    public function __construct($columnName, $label)
+    /**
+     * @var array Other field names this field can be triggered by, see the Trigger API documentation.
+     */
+    public $trigger;
+
+    /**
+     * @var array Other field names text is converted in to a URL, slug or file name value in this field.
+     */
+    public $preset;
+
+    /**
+     * Constructor.
+     * @param string $fieldName
+     * @param string $label
+     */
+    public function __construct($fieldName, $label)
     {
-        $this->columnName = $columnName;
+        $this->fieldName = $fieldName;
         $this->label = $label;
     }
 
@@ -217,23 +254,75 @@ class FormField
      */
     protected function evalConfig($config)
     {
-        if (isset($config['options'])) $this->options($config['options']);
-        if (isset($config['span'])) $this->span($config['span']);
-        if (isset($config['context'])) $this->context = $config['context'];
-        if (isset($config['size'])) $this->size($config['size']);
-        if (isset($config['tab'])) $this->tab($config['tab']);
-        if (isset($config['commentAbove'])) $this->comment($config['commentAbove'], 'above');
-        if (isset($config['comment'])) $this->comment($config['comment']);
-        if (isset($config['placeholder'])) $this->placeholder = $config['placeholder'];
-        if (isset($config['default'])) $this->defaults = $config['default'];
-        if (isset($config['cssClass'])) $this->cssClass = $config['cssClass'];
-        if (isset($config['attributes'])) $this->attributes = $config['attributes'];
-        if (isset($config['depends'])) $this->depends = $config['depends'];
-        if (isset($config['path'])) $this->path = $config['path'];
+        if (is_null($config)) {
+            $config = [];
+        }
 
-        if (array_key_exists('required', $config)) $this->required = $config['required'];
-        if (array_key_exists('disabled', $config)) $this->disabled = $config['disabled'];
-        if (array_key_exists('stretch', $config)) $this->stretch = $config['stretch'];
+        /*
+         * Standard config:property values
+         */
+        $applyConfigValues = [
+            'commentHtml',
+            'placeholder',
+            'dependsOn',
+            'required',
+            'disabled',
+            'cssClass',
+            'stretch',
+            'context',
+            'hidden',
+            'trigger',
+            'preset',
+            'path',
+        ];
+
+        foreach ($applyConfigValues as $value) {
+            if (array_key_exists($value, $config)) {
+                $this->{$value} = $config[$value];
+            }
+        }
+
+        /*
+         * Custom applicators
+         */
+        if (isset($config['options'])) {
+            $this->options($config['options']);
+        }
+        if (isset($config['span'])) {
+            $this->span($config['span']);
+        }
+        if (isset($config['size'])) {
+            $this->size($config['size']);
+        }
+        if (isset($config['tab'])) {
+            $this->tab($config['tab']);
+        }
+        if (isset($config['commentAbove'])) {
+            $this->comment($config['commentAbove'], 'above');
+        }
+        if (isset($config['comment'])) {
+            $this->comment($config['comment']);
+        }
+        if (isset($config['default'])) {
+            $this->defaults = $config['default'];
+        }
+        if (isset($config['defaultFrom'])) {
+            $this->defaultFrom = $config['defaultFrom'];
+        }
+        if (isset($config['attributes'])) {
+            $this->attributes($config['attributes']);
+        }
+        if (isset($config['containerAttributes'])) {
+            $this->attributes($config['containerAttributes'], 'container');
+        }
+
+        if (isset($config['valueFrom'])) {
+            $this->valueFrom = $config['valueFrom'];
+        }
+        else {
+            $this->valueFrom = $this->fieldName;
+        }
+
         return $config;
     }
 
@@ -244,12 +333,175 @@ class FormField
      * @param bool $isHtml Set to true if you use HTML formatting in the comment
      * Supported values are 'below' and 'above'
      */
-    public function comment($text, $position = 'below', $isHtml = false)
+    public function comment($text, $position = 'below', $isHtml = null)
     {
         $this->comment = $text;
         $this->commentPosition = $position;
-        $this->commentHtml = $isHtml;
+
+        if ($isHtml !== null) {
+            $this->commentHtml = $isHtml;
+        }
+
         return $this;
+    }
+
+    /**
+     * Sets the attributes for this field in a given position.
+     * - field: Attributes are added to the form field element (input, select, textarea, etc)
+     * - container: Attributes are added to the form field container (div.form-group)
+     * @param  array $items
+     * @param  string $position
+     * @return void
+     */
+    public function attributes($items, $position = 'field')
+    {
+        if (!is_array($items)) {
+            return;
+        }
+
+        $multiArray = array_filter($items, 'is_array');
+        if (!$multiArray) {
+            $this->attributes[$position] = $items;
+            return;
+        }
+
+        foreach ($items as $_position => $_items) {
+            $this->attributes($_items, $_position);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Checks if the field has the supplied [unfiltered] attribute.
+     * @param  string $name
+     * @param  string $position
+     * @return bool
+     */
+    public function hasAttribute($name, $position = 'field')
+    {
+        if (!isset($this->attributes[$position])) {
+            return false;
+        }
+
+        return array_key_exists($name, $this->attributes[$position]);
+    }
+
+    /**
+     * Returns the attributes for this field at a given position.
+     * @param  string $position
+     * @return array
+     */
+    public function getAttributes($position = 'field', $htmlBuild = true)
+    {
+        $result = array_get($this->attributes, $position, []);
+        $result = $this->filterAttributes($result, $position);
+        return $htmlBuild ? Html::attributes($result) : $result;
+    }
+
+    /**
+     * Adds any circumstantial attributes to the field based on other
+     * settings, such as the 'disabled' option.
+     * @param  array $attributes
+     * @param  string $position
+     * @return array
+     */
+    protected function filterAttributes($attributes, $position = 'field')
+    {
+        $position = strtolower($position);
+
+        $attributes = $this->filterTriggerAttributes($attributes, $position);
+        $attributes = $this->filterPresetAttributes($attributes, $position);
+
+        if ($position == 'field' && $this->disabled) {
+            $attributes = $attributes + ['disabled' => 'disabled'];
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Adds attributes used specifically by the Trigger API
+     * @param  array $attributes
+     * @param  string $position
+     * @return array
+     */
+    protected function filterTriggerAttributes($attributes, $position = 'field')
+    {
+        if (!$this->trigger || !is_array($this->trigger)) {
+            return $attributes;
+        }
+
+        $triggerAction = array_get($this->trigger, 'action');
+        $triggerField = array_get($this->trigger, 'field');
+        $triggerCondition = array_get($this->trigger, 'condition');
+
+        // Apply these to container
+        if (in_array($triggerAction, ['hide', 'show']) && $position != 'container') {
+            return $attributes;
+        }
+
+        // Apply these to field/input
+        if (in_array($triggerAction, ['enable', 'disable', 'empty']) && $position != 'field') {
+            return $attributes;
+        }
+
+        if ($this->arrayName) {
+            $fullTriggerField = $this->arrayName.'['.implode('][', HtmlHelper::nameToArray($triggerField)).']';
+        }
+        else {
+            $fullTriggerField = $triggerField;
+        }
+
+        $newAttributes = [
+            'data-trigger' => '[name="'.$fullTriggerField.'"]',
+            'data-trigger-action' => $triggerAction,
+            'data-trigger-condition' => $triggerCondition,
+            'data-trigger-closest-parent' => 'form'
+        ];
+
+        $attributes = $attributes + $newAttributes;
+        return $attributes;
+    }
+
+    /**
+     * Adds attributes used specifically by the Input Preset API
+     * @param  array $attributes
+     * @param  string $position
+     * @return array
+     */
+    protected function filterPresetAttributes($attributes, $position = 'field')
+    {
+        if (!$this->preset || $position != 'field') {
+            return $attributes;
+        }
+
+        if (!is_array($this->preset)) {
+            $this->preset = ['field' => $this->preset, 'type' => 'slug'];
+        }
+
+        $presetField = array_get($this->preset, 'field');
+        $presetType = array_get($this->preset, 'type');
+
+        if ($this->arrayName) {
+            $fullPresetField = $this->arrayName.'['.implode('][', HtmlHelper::nameToArray($presetField)).']';
+        }
+        else {
+            $fullPresetField = $presetField;
+        }
+
+        $newAttributes = [
+            'data-input-preset' => '[name="'.$fullPresetField.'"]',
+            'data-input-preset-type' => $presetType,
+            'data-input-preset-closest-parent' => 'form'
+        ];
+
+        if ($prefixInput = array_get($this->preset, 'prefixInput')) {
+            $newAttributes['data-input-preset-prefix-input'] = $prefixInput;
+        }
+
+        $attributes = $attributes + $newAttributes;
+        return $attributes;
     }
 
     /**
@@ -259,32 +511,154 @@ class FormField
      */
     public function getName($arrayName = null)
     {
-        if ($arrayName === null)
+        if ($arrayName === null) {
             $arrayName = $this->arrayName;
+        }
 
-        if ($arrayName)
-            return $arrayName.'['.implode('][', Str::evalHtmlArray($this->columnName)).']';
-        else
-            return $this->columnName;
+        if ($arrayName) {
+            return $arrayName.'['.implode('][', HtmlHelper::nameToArray($this->fieldName)).']';
+        }
+        else {
+            return $this->fieldName;
+        }
     }
 
     /**
      * Returns a value suitable for the field id property.
+     * @param  string $suffix Specify a suffix string
+     * @return string
      */
     public function getId($suffix = null)
     {
         $id = 'field';
-        if ($this->arrayName)
+        if ($this->arrayName) {
             $id .= '-'.$this->arrayName;
+        }
 
-        $id .= '-'.$this->columnName;
+        $id .= '-'.$this->fieldName;
 
-        if ($suffix)
+        if ($suffix) {
             $id .= '-'.$suffix;
+        }
 
-        if ($this->idPrefix)
+        if ($this->idPrefix) {
             $id = $this->idPrefix . '-' . $id;
+        }
 
-        return Str::evalHtmlId($id);
+        return HtmlHelper::nameToId($id);
+    }
+
+    /**
+     * Returns a raw config item value.
+     * @param  string $value
+     * @param  string $default
+     * @return mixed
+     */
+    public function getConfig($value, $default = null)
+    {
+        return array_get($this->config, $value, $default);
+    }
+
+    /**
+     * Returns this fields value from a supplied data set, which can be
+     * an array or a model or another generic collection.
+     * @param mixed $data
+     * @param mixed $default
+     * @return mixed
+     */
+    public function getValueFromData($data, $default = null)
+    {
+        $fieldName = $this->valueFrom ?: $this->fieldName;
+        return $this->getFieldNameFromData($fieldName, $data, $default);
+    }
+
+    /**
+     * Returns the default value for this field, the supplied data is used
+     * to source data when defaultFrom is specified.
+     * @param mixed $data
+     * @return mixed
+     */
+    public function getDefaultFromData($data)
+    {
+        if ($this->defaultFrom) {
+            return $this->getFieldNameFromData($this->defaultFrom, $data);
+        }
+
+        if ($this->defaults !== '') {
+            return $this->defaults;
+        }
+
+        return null;
+    }
+
+    /**
+     * Returns the final model and attribute name of a nested attribute.
+     * Eg: list($model, $attribute) = $this->resolveAttribute('person[phone]');
+     * @param  string $attribute.
+     * @return array
+     */
+    public function resolveModelAttribute($model, $attribute = null)
+    {
+        if ($attribute === null) {
+            $attribute = $this->valueFrom ?: $this->fieldName;
+        }
+
+        $parts = is_array($attribute) ? $attribute : HtmlHelper::nameToArray($attribute);
+        $last = array_pop($parts);
+
+        foreach ($parts as $part) {
+            $model = $model->{$part};
+        }
+
+        return [$model, $last];
+    }
+
+    /**
+     * Internal method to extract the value of a field name from a data set.
+     * @param string $fieldName
+     * @param mixed $data
+     * @param mixed $default
+     * @return mixed
+     */
+    protected function getFieldNameFromData($fieldName, $data, $default = null)
+    {
+        /*
+         * Array field name, eg: field[key][key2][key3]
+         */
+        $keyParts = HtmlHelper::nameToArray($fieldName);
+        $lastField = end($keyParts);
+        $result = $data;
+
+        /*
+         * Loop the field key parts and build a value.
+         * To support relations only the last field should return the
+         * relation value, all others will look up the relation object as normal.
+         */
+        foreach ($keyParts as $key) {
+
+            if ($result instanceof Model && $result->hasRelation($key)) {
+                if ($key == $lastField) {
+                    $result = $result->getRelationValue($key) ?: $default;
+                }
+                else {
+                    $result = $result->{$key};
+                }
+            }
+            elseif (is_array($result)) {
+                if (!array_key_exists($key, $result)) {
+                    return $default;
+                }
+                $result = $result[$key];
+            }
+            else {
+                if (!isset($result->{$key})) {
+                    return $default;
+                }
+                $result = $result->{$key};
+            }
+
+        }
+
+        return $result;
     }
 }

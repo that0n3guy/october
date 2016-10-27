@@ -1,5 +1,7 @@
 (function($){
-    var OctoberLayout = function() {}
+    var OctoberLayout = function() {
+        this.$accountMenuOverlay = null
+    }
 
     OctoberLayout.prototype.setPageTitle = function(title) {
         var $title = $('title')
@@ -11,19 +13,56 @@
     }
 
     OctoberLayout.prototype.updateLayout = function(title) {
-        $('.layout-cell.width-fix').each(function(){
-            var $el = $(this).children();
-            if ($el.length > 0) {
-                var margin = $el.data('oc.layoutMargin');
-                if (margin === undefined) {
-                    margin = parseInt($el.css('marginRight')) + parseInt($el.css('marginLeft'))
-                    $el.data('oc.layoutMargin', margin)
-                }
+        var $children, $el, fixedWidth, margin
 
-                $(this).width($el.get(0).offsetWidth + margin)
+        // The entire 'width-fix' class can probably be removed if year >= 2017
+        // After checking that it isn't being used anywhere -sg
+        $('.layout-cell.width-fix, [data-calculate-width]').each(function(){
+            $children = $(this).children()
+
+            if ($children.length > 0) {
+                fixedWidth = 0
+
+                $children.each(function() {
+                    $el = $(this)
+                    margin = $el.data('oc.layoutMargin')
+
+                    if (margin === undefined) {
+                        margin = parseInt($el.css('marginRight')) + parseInt($el.css('marginLeft'))
+                        $el.data('oc.layoutMargin', margin)
+                    }
+                    fixedWidth += $el.get(0).offsetWidth + margin
+                })
+
+                $(this).width(fixedWidth)
                 $(this).trigger('oc.widthFixed')
             }
         })
+    }
+
+    OctoberLayout.prototype.toggleAccountMenu = function(el) {
+        var self = this,
+            $el = $(el),
+            $parent = $(el).parent(),
+            $menu = $el.next()
+
+        if ($menu.hasClass('active')) {
+            self.$accountMenuOverlay.remove()
+            $parent.removeClass('highlight')
+            $menu.removeClass('active')
+        }
+        else {
+            self.$accountMenuOverlay = $('<div />').addClass('popover-overlay')
+            $(document.body).append(self.$accountMenuOverlay)
+            $parent.addClass('highlight')
+            $menu.addClass('active')
+
+            self.$accountMenuOverlay.one('click', function(){
+                self.$accountMenuOverlay.remove()
+                $menu.removeClass('active')
+                $parent.removeClass('highlight')
+            })
+        }
     }
 
     if ($.oc === undefined)
